@@ -95,7 +95,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'room_name': room.name,
                 }
             )
-            # Also broadcast to room so admin sees it inline
             await self.channel_layer.group_send(
                 self.room_group,
                 {
@@ -198,7 +197,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return True
         if user.id == room.client_id:
             return True
-        return room.providers.filter(id=user.id).exists()
+        if room.providers.filter(id=user.id).exists():
+            return True
+        if room.extra_clients.filter(id=user.id).exists():
+            return True
+        return False
 
     @database_sync_to_async
     def get_room(self):
@@ -213,7 +216,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         room = ChatRoom.objects.get(pk=self.room_id)
 
-        # Admin sees pending messages too
         if self.user.role == 'admin':
             msgs = list(
                 room.messages.filter(status__in=['sent', 'approved', 'pending'])
@@ -241,7 +243,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             for m in msgs
         ]
 
-        # Admin sees pending files too
         if self.user.role == 'admin':
             files = list(
                 room.files.filter(status__in=['approved', 'direct', 'pending'])

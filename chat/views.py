@@ -4,6 +4,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
+from django.db.models import Q
 from .models import ChatRoom, Message, SharedFile
 from .serializers import ChatRoomSerializer, MessageSerializer
 from .moderation import moderate_message, ACTION_SEND, ACTION_HOLD, ACTION_BLOCK
@@ -26,7 +27,9 @@ class ChatRoomListView(generics.ListAPIView):
         if user.role == 'admin':
             return ChatRoom.objects.all()
         if user.role == 'client':
-            return ChatRoom.objects.filter(client=user)
+            return ChatRoom.objects.filter(
+                Q(client=user) | Q(extra_clients=user)
+            ).distinct()
         if user.role == 'provider':
             return ChatRoom.objects.filter(providers=user)
         return ChatRoom.objects.none()
@@ -290,6 +293,95 @@ class RemoveProviderView(APIView):
             ChatRoomSerializer(room).data,
             status=status.HTTP_200_OK,
         )
+
+
+class InviteClientView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, room_id):
+        room = get_object_or_404(ChatRoom, pk=room_id)
+        user = request.user
+
+        # Admin can use client_id, regular members use phone_number
+        if user.role == 'admin':
+            client_id = request.data.get('client_id')
+            if not client_id:
+                return Response({'error': 'client_id is required.'}, status=400)
+            from accounts.models import CustomUser
+            invitee = get_object_or_404(CustomUser, pk=client_id, role='client')
+        else:
+            # Regular members can only invite by phone number
+            if not (user.id == room.client_id or
+                    room.extra_clients.filter(id=user.id).exists()):
+                return Response({'error': 'Not a room member.'}, status=403)
+
+            phone_number = request.data.get('phone_number', '').strip()
+            if not phone_number:
+                return Response({'error': 'Phone number is required.'}, status=400)
+
+            from accounts.models import CustomUser
+            try:
+                invitee = CustomUser.objects.get(
+                    phone_number=phone_number,
+                    role='client'
+                )
+            except CustomUser.DoesNotExist:
+                return Response(
+                    {'error': 'No client found with that phone number.'},
+                    status=404
+                )
+
+        if room.status == 'closed':
+            return Response({'error': 'Room is closed.'}, status=400)
+
+        if invitee.id == room.client_id:
+            return Response({'error': 'This client is already in the room.'}, status=400)
+
+        if room.extra_clients.filter(id=invitee.id).exists():
+            return Response({'error': 'This client is already in the room.'}, status=400)
+
+        room.extra_clients.add(invitee)
+
+        Message.objects.create(
+            room   = room,
+            sender = user,
+            body   = f'{invitee.display_name} has been invited to the room.',
+            status = 'sent',
+        )
+
+        return Response(ChatRoomSerializer(room).data, status=200)
+
+
+class RemoveClientView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, room_id):
+        if request.user.role != 'admin':
+            return Response({'error': 'Admin only.'}, status=403)
+
+        room = get_object_or_404(ChatRoom, pk=room_id)
+
+        client_id = request.data.get('client_id')
+        if not client_id:
+            return Response({'error': 'client_id is required.'}, status=400)
+
+        from accounts.models import CustomUser
+
+        client = get_object_or_404(CustomUser, pk=client_id, role='client')
+
+        if not room.extra_clients.filter(id=client.id).exists():
+            return Response({'error': 'Client is not in this room.'}, status=400)
+
+        room.extra_clients.remove(client)
+
+        Message.objects.create(
+            room   = room,
+            sender = request.user,
+            body   = f'{client.display_name} has been removed from the room.',
+            status = 'sent',
+        )
+
+        return Response(ChatRoomSerializer(room).data, status=200)
 
 
 class CloseRoomView(APIView):

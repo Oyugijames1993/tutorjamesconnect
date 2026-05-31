@@ -1,5 +1,3 @@
-
-
 from django.db import models
 from accounts.models import CustomUser
 
@@ -12,6 +10,7 @@ class ChatRoom(models.Model):
 
     name                         = models.CharField(max_length=100)
     client                       = models.ForeignKey(CustomUser, related_name='client_rooms', on_delete=models.CASCADE)
+    extra_clients                = models.ManyToManyField(CustomUser, related_name='extra_client_rooms', blank=True)
     providers                    = models.ManyToManyField(CustomUser, related_name='provider_rooms', blank=True)
     admin                        = models.ForeignKey(CustomUser, related_name='admin_rooms', on_delete=models.SET_NULL, null=True, blank=True)
     status                       = models.CharField(max_length=15, choices=STATUS_CHOICES, default='negotiating')
@@ -31,7 +30,6 @@ class ChatRoom(models.Model):
         if user.id == self.client_id:
             return True
         return False
-
 
 
 class Message(models.Model):

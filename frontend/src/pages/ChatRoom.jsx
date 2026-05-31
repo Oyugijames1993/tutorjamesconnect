@@ -23,8 +23,12 @@ export default function ChatRoom() {
   const [connected, setConnected]             = useState(false)
   const [error, setError]                     = useState('')
   const [availableProviders, setAvailableProviders] = useState([])
+  const [availableClients, setAvailableClients]     = useState([])
   const [selectedProvider, setSelectedProvider]     = useState('')
+  const [selectedClient, setSelectedClient]         = useState('')
   const [inviteMsg, setInviteMsg]                   = useState('')
+  const [inviteClientMsg, setInviteClientMsg]       = useState('')
+  const [invitePhone, setInvitePhone]               = useState('')
   const messagesEndRef = useRef(null)
   const wsRef          = useRef(null)
   const seenIdsRef     = useRef(new Set())
@@ -50,7 +54,8 @@ export default function ChatRoom() {
     if (!isAdmin) return
     api.get('/accounts/users/').then(res => {
       setAvailableProviders(res.data.filter(u => u.role === 'provider'))
-    }).catch(err => console.error('Failed to load providers:', err))
+      setAvailableClients(res.data.filter(u => u.role === 'client'))
+    }).catch(err => console.error('Failed to load users:', err))
   }, [])
 
   useEffect(() => {
@@ -195,6 +200,45 @@ export default function ChatRoom() {
     }
   }
 
+  const inviteClientByDropdown = async () => {
+    if (!selectedClient) {
+      setError('Please select a client first.')
+      setTimeout(() => setError(''), 3000)
+      return
+    }
+    try {
+      const res = await api.post('/chat/rooms/' + activeRoom.id + '/invite-client/', {
+        client_id: selectedClient,
+      })
+      setActiveRoom(res.data)
+      setSelectedClient('')
+      setInviteClientMsg('✅ Client added successfully!')
+      setTimeout(() => setInviteClientMsg(''), 3000)
+      api.get('/chat/rooms/').then(r => setRooms(r.data))
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Failed to add client.'
+      setError(msg)
+      setTimeout(() => setError(''), 3000)
+    }
+  }
+
+  const inviteClientByPhone = async () => {
+    if (!invitePhone.trim()) return
+    try {
+      const res = await api.post('/chat/rooms/' + activeRoom.id + '/invite-client/', {
+        phone_number: invitePhone.trim()
+      })
+      setActiveRoom(res.data)
+      setInvitePhone('')
+      setInviteClientMsg('✅ Client invited successfully!')
+      setTimeout(() => setInviteClientMsg(''), 3000)
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Failed to invite client.'
+      setInviteClientMsg('🚫 ' + msg)
+      setTimeout(() => setInviteClientMsg(''), 4000)
+    }
+  }
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
   }
@@ -218,6 +262,13 @@ export default function ChatRoom() {
   const isImageFile = (filename) => {
     return /\.(jpg|jpeg|png|gif|webp)$/i.test(filename)
   }
+
+  const isRoomMember = activeRoom && (
+    isAdmin ||
+    user?.display_name === getClientDisplay(activeRoom) ||
+    (activeRoom.extra_clients || []).find(c => c.display_name === user?.display_name) ||
+    (activeRoom.providers || []).find(p => p.display_name === user?.display_name)
+  )
 
   if (!activeRoom) {
     return (
@@ -304,7 +355,7 @@ export default function ChatRoom() {
             }
 
             if (msg.type === 'file') {
-              const isImg    = isImageFile(msg.file_name)
+              const isImg     = isImageFile(msg.file_name)
               const isPending = msg.status === 'pending'
               return (
                 <div key={msg.id || idx} style={{ ...styles.msgRow, justifyContent: 'flex-start' }}>
@@ -443,6 +494,31 @@ export default function ChatRoom() {
           <div ref={messagesEndRef} />
         </div>
 
+        {/* Invite client by phone — visible to all room members */}
+        {activeRoom.status !== 'closed' && user?.role === 'client' && (
+          <div style={styles.inviteClientBar}>
+            <input
+              style={styles.inviteClientInput}
+              placeholder="Invite a friend e.g. +96512345678"
+              value={invitePhone}
+              onChange={e => setInvitePhone(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') inviteClientByPhone() }}
+            />
+            <button style={styles.inviteClientBtn} onClick={inviteClientByPhone}>
+              Invite
+            </button>
+          </div>
+        )}
+        {inviteClientMsg && user?.role === 'client' && (
+          <div style={{
+            textAlign: 'center', fontSize: 12, padding: '4px 20px',
+            color: inviteClientMsg.startsWith('✅') ? '#1a7a4a' : '#a0251a',
+            background: inviteClientMsg.startsWith('✅') ? '#e6f4ed' : '#fae6e6',
+          }}>
+            {inviteClientMsg}
+          </div>
+        )}
+
         <div style={styles.inputArea}>
           <div style={styles.inputRow}>
             <input
@@ -489,6 +565,8 @@ export default function ChatRoom() {
           {/* Room Members */}
           <div style={styles.panelSection}>
             <div style={styles.panelLabel}>ROOM MEMBERS</div>
+
+            {/* Admin */}
             <div style={styles.memberRow}>
               <div style={{ ...styles.memberAv, background: '#1a56a0' }}>A</div>
               <div>
@@ -496,6 +574,8 @@ export default function ChatRoom() {
                 <div style={styles.memberRole}>admin</div>
               </div>
             </div>
+
+            {/* Primary client */}
             <div style={styles.memberRow}>
               <div style={{ ...styles.memberAv, background: '#1a7a4a' }}>C</div>
               <div>
@@ -503,6 +583,34 @@ export default function ChatRoom() {
                 <div style={styles.memberRole}>client</div>
               </div>
             </div>
+
+            {/* Extra clients */}
+            {(activeRoom.extra_clients || []).map(c => (
+              <div key={c.id} style={styles.memberRow}>
+                <div style={{ ...styles.memberAv, background: '#1a7a4a' }}>C</div>
+                <div style={{ flex: 1 }}>
+                  <div style={styles.memberName}>{c.display_name}</div>
+                  <div style={styles.memberRole}>client (invited)</div>
+                </div>
+                <button
+                  style={styles.removeBtn}
+                  onClick={async () => {
+                    try {
+                      const res = await api.post('/chat/rooms/' + activeRoom.id + '/remove-client/', {
+                        client_id: c.id
+                      })
+                      setActiveRoom(res.data)
+                      api.get('/chat/rooms/').then(r => setRooms(r.data))
+                    } catch {
+                      setError('Failed to remove client.')
+                      setTimeout(() => setError(''), 3000)
+                    }
+                  }}
+                >✕</button>
+              </div>
+            ))}
+
+            {/* Providers */}
             {(activeRoom.providers || []).map(p => (
               <div key={p.id} style={styles.memberRow}>
                 <div style={{ ...styles.memberAv, background: '#BA7517' }}>P</div>
@@ -527,6 +635,9 @@ export default function ChatRoom() {
                 >✕</button>
               </div>
             ))}
+
+            {/* Invite provider */}
+            <div style={styles.panelLabel} >INVITE PROVIDER</div>
             <select
               style={styles.providerSelect}
               value={selectedProvider}
@@ -544,6 +655,29 @@ export default function ChatRoom() {
               + Invite Provider
             </button>
             {inviteMsg && <div style={styles.inviteSuccess}>{inviteMsg}</div>}
+
+            {/* Invite client — admin uses dropdown */}
+            <div style={{ ...styles.panelLabel, marginTop: 12 }}>INVITE CLIENT</div>
+            <select
+              style={styles.providerSelect}
+              value={selectedClient}
+              onChange={e => setSelectedClient(e.target.value)}
+            >
+              <option value="">Select a client to add</option>
+              {availableClients
+                .filter(c =>
+                  c.id !== activeRoom.client?.id &&
+                  !(activeRoom.extra_clients || []).find(ec => ec.id === c.id)
+                )
+                .map(c => (
+                  <option key={c.id} value={c.id}>{c.display_name}</option>
+                ))
+              }
+            </select>
+            <button style={styles.inviteBtn} onClick={inviteClientByDropdown}>
+              + Add Client
+            </button>
+            {inviteClientMsg && <div style={styles.inviteSuccess}>{inviteClientMsg}</div>}
           </div>
 
           {/* File Settings */}
@@ -786,6 +920,9 @@ const styles = {
   sendBtn: { background: '#1a56a0', color: '#fff', border: 'none', borderRadius: '8px', padding: '10px 16px', fontSize: '18px', cursor: 'pointer', flexShrink: 0 },
   sendBtnDisabled: { background: '#ddd', color: '#aaa', border: 'none', borderRadius: '8px', padding: '10px 16px', fontSize: '18px', cursor: 'not-allowed', flexShrink: 0 },
   inputHint: { fontSize: '11px', color: '#bbb', marginTop: '6px', textAlign: 'center' },
+  inviteClientBar: { display: 'flex', gap: 8, padding: '8px 20px', background: '#f9f9f9', borderTop: '1px solid #f0f0f0' },
+  inviteClientInput: { flex: 1, padding: '7px 12px', borderRadius: '8px', border: '1.5px solid #ddd', fontSize: '13px', outline: 'none' },
+  inviteClientBtn: { padding: '7px 14px', borderRadius: '8px', border: 'none', background: '#1a56a0', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
   adminPanel: { width: '260px', background: '#ffffff', borderLeft: '1px solid #e5e5e5', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: 'auto' },
   adminHeader: { padding: '14px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, #1a56a0, #0d3b6e)' },
   adminTitle: { fontSize: '14px', fontWeight: '600', color: '#ffffff' },

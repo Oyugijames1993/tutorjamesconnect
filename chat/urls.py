@@ -14,6 +14,8 @@ from .views import (
     RemoveProviderView,
     RoomSettingsView,
     DeleteRoomView,
+    InviteClientView,
+    RemoveClientView,
 )
 from .file_sharing_views import UploadFileView, ApproveFileView, RejectFileView
 
@@ -37,4 +39,7 @@ urlpatterns = [
     path('admin/messages/<int:message_id>/reject/',  RejectMessageView.as_view(),  name='reject-message'),
     path('admin/files/<int:file_id>/approve/',       ApproveFileView.as_view(),    name='approve-file'),
     path('admin/files/<int:file_id>/reject/',        RejectFileView.as_view(),     name='reject-file'),
+    # Add to urlpatterns:
+    path('rooms/<int:room_id>/invite-client/', InviteClientView.as_view(), name='invite-client'),
+    path('rooms/<int:room_id>/remove-client/', RemoveClientView.as_view(), name='remove-client'),
 ]
