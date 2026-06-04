@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useParams } from 'react-router-dom'
 import ChatWebSocket from '../services/websocket'
 import api from '../services/api'
+import useNotificationSound, { SOUND_PROFILES } from '../hooks/useNotificationSound'
 
 export default function ChatRoom() {
   const { user, logout } = useAuth()
@@ -29,10 +30,49 @@ export default function ChatRoom() {
   const [inviteMsg, setInviteMsg]                   = useState('')
   const [inviteClientMsg, setInviteClientMsg]       = useState('')
   const [invitePhone, setInvitePhone]               = useState('')
+  const [unreadCounts, setUnreadCounts]             = useState({})
+
+  // ── Message targeting (admin only) ────────────────────────────────────────
+  const [messageTarget, setMessageTarget] = useState('everyone')
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // ── Sound notifications ────────────────────────────────────────────────────
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    const stored = localStorage.getItem('tjc_sound_enabled')
+    return stored === null ? true : stored === 'true'
+  })
+  const [messageSoundProfile, setMessageSoundProfile] = useState(() => {
+    return localStorage.getItem('tjc_message_sound_profile') || 'chime'
+  })
+  const [pendingSoundProfile, setPendingSoundProfile] = useState(() => {
+    return localStorage.getItem('tjc_pending_sound_profile') || 'ping'
+  })
+  const { playSound } = useNotificationSound()
+
+  const toggleSound = useCallback(() => {
+    setSoundEnabled(prev => {
+      const next = !prev
+      localStorage.setItem('tjc_sound_enabled', String(next))
+      return next
+    })
+  }, [])
+
+  const changeMessageSoundProfile = useCallback((profileId) => {
+    setMessageSoundProfile(profileId)
+    localStorage.setItem('tjc_message_sound_profile', profileId)
+  }, [])
+
+  const changePendingSoundProfile = useCallback((profileId) => {
+    setPendingSoundProfile(profileId)
+    localStorage.setItem('tjc_pending_sound_profile', profileId)
+  }, [])
+  // ──────────────────────────────────────────────────────────────────────────
+
   const messagesEndRef = useRef(null)
   const wsRef          = useRef(null)
   const seenIdsRef     = useRef(new Set())
   const fileInputRef   = useRef(null)
+  const roomWsRefs     = useRef({})
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -67,6 +107,55 @@ export default function ChatRoom() {
 
   useEffect(() => {
     if (!activeRoom) return
+    setUnreadCounts(prev => ({ ...prev, [activeRoom.id]: 0 }))
+  }, [activeRoom?.id])
+
+  useEffect(() => {
+    if (rooms.length === 0 || !activeRoom) return
+    const token = localStorage.getItem('access_token')
+
+    rooms.forEach(room => {
+      if (room.id === activeRoom.id) return
+      if (roomWsRefs.current[room.id]) return
+
+      let historyLoaded = false
+
+      const ws = new ChatWebSocket(room.id, token, (data) => {
+        if (data.type === 'connected') {
+          setTimeout(() => { historyLoaded = true }, 500)
+          return
+        }
+        if ((data.type === 'message' || data.type === 'file') && historyLoaded) {
+          setUnreadCounts(prev => ({
+            ...prev,
+            [room.id]: (prev[room.id] || 0) + 1
+          }))
+          if (soundEnabled) playSound('message', messageSoundProfile)
+        }
+      })
+      ws.connect()
+      roomWsRefs.current[room.id] = ws
+    })
+
+    return () => {}
+  }, [rooms, activeRoom?.id, soundEnabled, messageSoundProfile, playSound])
+
+  useEffect(() => {
+    if (!activeRoom) return
+    if (roomWsRefs.current[activeRoom.id]) {
+      roomWsRefs.current[activeRoom.id].disconnect()
+      delete roomWsRefs.current[activeRoom.id]
+    }
+  }, [activeRoom?.id])
+
+  useEffect(() => {
+    return () => {
+      Object.values(roomWsRefs.current).forEach(ws => ws.disconnect())
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!activeRoom) return
     if (wsRef.current) wsRef.current.disconnect()
     setMessages([])
     setConnected(false)
@@ -82,6 +171,9 @@ export default function ChatRoom() {
           if (data.id && seenIdsRef.current.has(data.id)) return
           if (data.id) seenIdsRef.current.add(data.id)
           setMessages(prev => [...prev, data])
+          if (soundEnabled && data.sender !== user?.display_name) {
+            playSound('message', messageSoundProfile)
+          }
           return
         }
 
@@ -89,6 +181,9 @@ export default function ChatRoom() {
           if (seenIdsRef.current.has(data.id)) return
           seenIdsRef.current.add(data.id)
           setMessages(prev => [...prev, data])
+          if (soundEnabled && data.sender !== user?.display_name) {
+            playSound('message', messageSoundProfile)
+          }
           return
         }
 
@@ -112,6 +207,7 @@ export default function ChatRoom() {
             if (prev.find(p => p.id === data.id)) return prev
             return [...prev, data]
           })
+          if (soundEnabled && isAdmin) playSound('pending', pendingSoundProfile)
           return
         }
 
@@ -120,6 +216,7 @@ export default function ChatRoom() {
             if (prev.find(f => f.id === data.id)) return prev
             return [...prev, data]
           })
+          if (soundEnabled && isAdmin) playSound('pending', pendingSoundProfile)
           if (isAdmin) {
             setMessages(prev => {
               const pendingId = 'file_pending_' + data.id
@@ -143,12 +240,15 @@ export default function ChatRoom() {
     )
     wsRef.current.connect()
     return () => { if (wsRef.current) wsRef.current.disconnect() }
-  }, [activeRoom])
+  }, [activeRoom, soundEnabled, isAdmin, playSound, messageSoundProfile, pendingSoundProfile, user?.display_name])
 
   const sendMessage = () => {
     if (!input.trim() || !connected) return
-    wsRef.current.send(input.trim())
+    // Pass target for admin, always 'everyone' for others
+    wsRef.current.send(input.trim(), isAdmin ? messageTarget : 'everyone')
     setInput('')
+    // Reset target to everyone after sending
+    if (isAdmin) setMessageTarget('everyone')
   }
 
   const handleFileUpload = async (e) => {
@@ -263,12 +363,14 @@ export default function ChatRoom() {
     return /\.(jpg|jpeg|png|gif|webp)$/i.test(filename)
   }
 
-  const isRoomMember = activeRoom && (
-    isAdmin ||
-    user?.display_name === getClientDisplay(activeRoom) ||
-    (activeRoom.extra_clients || []).find(c => c.display_name === user?.display_name) ||
-    (activeRoom.providers || []).find(p => p.display_name === user?.display_name)
-  )
+  // Target label shown on messages (admin sees this on targeted messages)
+  const targetLabel = (target) => {
+    if (target === 'client')   return { text: '👤 Client only',   color: '#1a7a4a', bg: '#e6f4ed' }
+    if (target === 'provider') return { text: '🔧 Provider only', color: '#BA7517', bg: '#fff3e0' }
+    return null
+  }
+
+  const totalPending = pendingMessages.length + pendingFiles.length
 
   if (!activeRoom) {
     return (
@@ -299,25 +401,37 @@ export default function ChatRoom() {
             {rooms.length === 0 ? (
               <div style={styles.noRooms}>No chat rooms yet</div>
             ) : (
-              rooms.map((room) => (
-                <div
-                  key={room.id}
-                  style={{
-                    ...styles.roomItem,
-                    background: activeRoom?.id === room.id ? '#1a56a0' : 'transparent',
-                    color: activeRoom?.id === room.id ? '#fff' : '#1a1a1a',
-                  }}
-                  onClick={() => setActiveRoom(room)}
-                >
-                  <div style={styles.roomItemTop}>
-                    <span style={styles.roomName}>{room.name}</span>
+              rooms.map((room) => {
+                const unread = unreadCounts[room.id] || 0
+                const isActive = activeRoom?.id === room.id
+                return (
+                  <div
+                    key={room.id}
+                    style={{
+                      ...styles.roomItem,
+                      background: isActive ? '#1a56a0' : 'transparent',
+                      color: isActive ? '#fff' : '#1a1a1a',
+                    }}
+                    onClick={() => {
+                      setActiveRoom(room)
+                      setUnreadCounts(prev => ({ ...prev, [room.id]: 0 }))
+                    }}
+                  >
+                    <div style={styles.roomItemTop}>
+                      <span style={styles.roomName}>{room.name}</span>
+                      {unread > 0 && !isActive && (
+                        <span style={styles.unreadBadge}>
+                          {unread > 99 ? '99+' : unread}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ ...styles.roomSub, color: isActive ? '#BDD7F5' : '#888' }}>
+                      {getClientDisplay(room)} &nbsp;·&nbsp;
+                      <span style={{ color: statusColor(room.status) }}>{statusLabel(room.status)}</span>
+                    </div>
                   </div>
-                  <div style={{ ...styles.roomSub, color: activeRoom?.id === room.id ? '#BDD7F5' : '#888' }}>
-                    {getClientDisplay(room)} &nbsp;·&nbsp;
-                    <span style={{ color: statusColor(room.status) }}>{statusLabel(room.status)}</span>
-                  </div>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
           <button style={styles.logoutBtn} onClick={logout}>Sign Out</button>
@@ -329,7 +443,12 @@ export default function ChatRoom() {
           <div style={styles.chatHeaderLeft}>
             <button style={styles.menuBtn} onClick={() => setShowSidebar(!showSidebar)}>☰</button>
             {isAdmin && (
-              <button style={styles.menuBtn} onClick={() => setShowAdminPanel(!showAdminPanel)}>⚙️</button>
+              <button style={styles.menuBtn} onClick={() => setShowAdminPanel(!showAdminPanel)}>
+                ⚙️
+                {totalPending > 0 && (
+                  <span style={styles.adminBadge}>{totalPending}</span>
+                )}
+              </button>
             )}
             <div>
               <div style={styles.chatTitle}>{activeRoom.name}</div>
@@ -339,7 +458,16 @@ export default function ChatRoom() {
               </div>
             </div>
           </div>
-          <div style={styles.headerBadge}>{isAdmin ? '🔑 Admin' : 'Room #' + activeRoom.id}</div>
+          <div style={styles.chatHeaderRight}>
+            <button
+              style={styles.soundBtn}
+              onClick={toggleSound}
+              title={soundEnabled ? 'Mute notifications' : 'Unmute notifications'}
+            >
+              {soundEnabled ? '🔔' : '🔕'}
+            </button>
+            <div style={styles.headerBadge}>{isAdmin ? '🔑 Admin' : 'Room #' + activeRoom.id}</div>
+          </div>
         </div>
 
         {error && <div style={styles.errorBanner}>🚫 {error}</div>}
@@ -429,6 +557,8 @@ export default function ChatRoom() {
             const isMe       = msg.sender === user?.display_name
             const isAdminMsg = msg.role === 'admin'
             const isFlagged  = msg.status === 'pending'
+            const tLabel     = isAdmin ? targetLabel(msg.target) : null
+
             return (
               <div key={msg.id || idx} style={{ ...styles.msgRow, justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
                 {!isMe && (
@@ -479,6 +609,22 @@ export default function ChatRoom() {
                       </div>
                     )}
                   </div>
+                  {/* Target label — only admin sees this */}
+                  {tLabel && (
+                    <div style={{
+                      display: 'inline-block',
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: tLabel.color,
+                      background: tLabel.bg,
+                      borderRadius: 10,
+                      padding: '2px 8px',
+                      marginTop: 3,
+                      marginLeft: isMe ? 0 : 4,
+                    }}>
+                      {tLabel.text}
+                    </div>
+                  )}
                   <div style={{ ...styles.msgTime, textAlign: isMe ? 'right' : 'left' }}>
                     {msg.time} {isMe && !isFlagged && '✓✓'}
                   </div>
@@ -494,7 +640,6 @@ export default function ChatRoom() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Invite client by phone — visible to all room members */}
         {activeRoom.status !== 'closed' && user?.role === 'client' && (
           <div style={styles.inviteClientBar}>
             <input
@@ -504,9 +649,7 @@ export default function ChatRoom() {
               onChange={e => setInvitePhone(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') inviteClientByPhone() }}
             />
-            <button style={styles.inviteClientBtn} onClick={inviteClientByPhone}>
-              Invite
-            </button>
+            <button style={styles.inviteClientBtn} onClick={inviteClientByPhone}>Invite</button>
           </div>
         )}
         {inviteClientMsg && user?.role === 'client' && (
@@ -520,6 +663,31 @@ export default function ChatRoom() {
         )}
 
         <div style={styles.inputArea}>
+          {/* Target selector — admin only */}
+          {isAdmin && activeRoom.status !== 'closed' && (
+            <div style={styles.targetRow}>
+              <span style={styles.targetLabel}>Send to:</span>
+              {[
+                { value: 'everyone', label: '🌐 Everyone' },
+                { value: 'client',   label: '👤 Client only' },
+                { value: 'provider', label: '🔧 Provider only' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  style={{
+                    ...styles.targetBtn,
+                    background:   messageTarget === opt.value ? '#1a56a0' : '#f0f0f0',
+                    color:        messageTarget === opt.value ? '#fff' : '#555',
+                    borderColor:  messageTarget === opt.value ? '#1a56a0' : '#ddd',
+                    fontWeight:   messageTarget === opt.value ? 700 : 400,
+                  }}
+                  onClick={() => setMessageTarget(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
           <div style={styles.inputRow}>
             <input
               type="file"
@@ -534,8 +702,17 @@ export default function ChatRoom() {
               onClick={() => filesEnabled && connected && fileInputRef.current?.click()}
             >📎</button>
             <textarea
-              style={styles.input}
-              placeholder={connected ? 'Type a message...' : 'Connecting...'}
+              style={{
+                ...styles.input,
+                borderColor: messageTarget === 'client' ? '#1a7a4a' : messageTarget === 'provider' ? '#BA7517' : '#ddd',
+              }}
+              placeholder={
+                connected
+                  ? messageTarget === 'client'   ? 'Message to client only...'
+                  : messageTarget === 'provider' ? 'Message to provider only...'
+                  : 'Type a message...'
+                  : 'Connecting...'
+              }
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -556,17 +733,21 @@ export default function ChatRoom() {
 
       {isAdmin && showAdminPanel && (
         <div style={styles.adminPanel}>
-
           <div style={styles.adminHeader}>
-            <div style={styles.adminTitle}>Admin Controls</div>
+            <div style={styles.adminTitle}>
+              Admin Controls
+              {totalPending > 0 && (
+                <span style={{ marginLeft: 8, background: '#e53e3e', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 10 }}>
+                  {totalPending}
+                </span>
+              )}
+            </div>
             <button style={styles.closePanel} onClick={() => setShowAdminPanel(false)}>✕</button>
           </div>
 
           {/* Room Members */}
           <div style={styles.panelSection}>
             <div style={styles.panelLabel}>ROOM MEMBERS</div>
-
-            {/* Admin */}
             <div style={styles.memberRow}>
               <div style={{ ...styles.memberAv, background: '#1a56a0' }}>A</div>
               <div>
@@ -574,8 +755,6 @@ export default function ChatRoom() {
                 <div style={styles.memberRole}>admin</div>
               </div>
             </div>
-
-            {/* Primary client */}
             <div style={styles.memberRow}>
               <div style={{ ...styles.memberAv, background: '#1a7a4a' }}>C</div>
               <div>
@@ -583,8 +762,6 @@ export default function ChatRoom() {
                 <div style={styles.memberRole}>client</div>
               </div>
             </div>
-
-            {/* Extra clients */}
             {(activeRoom.extra_clients || []).map(c => (
               <div key={c.id} style={styles.memberRow}>
                 <div style={{ ...styles.memberAv, background: '#1a7a4a' }}>C</div>
@@ -592,25 +769,18 @@ export default function ChatRoom() {
                   <div style={styles.memberName}>{c.display_name}</div>
                   <div style={styles.memberRole}>client (invited)</div>
                 </div>
-                <button
-                  style={styles.removeBtn}
-                  onClick={async () => {
-                    try {
-                      const res = await api.post('/chat/rooms/' + activeRoom.id + '/remove-client/', {
-                        client_id: c.id
-                      })
-                      setActiveRoom(res.data)
-                      api.get('/chat/rooms/').then(r => setRooms(r.data))
-                    } catch {
-                      setError('Failed to remove client.')
-                      setTimeout(() => setError(''), 3000)
-                    }
-                  }}
-                >✕</button>
+                <button style={styles.removeBtn} onClick={async () => {
+                  try {
+                    const res = await api.post('/chat/rooms/' + activeRoom.id + '/remove-client/', { client_id: c.id })
+                    setActiveRoom(res.data)
+                    api.get('/chat/rooms/').then(r => setRooms(r.data))
+                  } catch {
+                    setError('Failed to remove client.')
+                    setTimeout(() => setError(''), 3000)
+                  }
+                }}>✕</button>
               </div>
             ))}
-
-            {/* Providers */}
             {(activeRoom.providers || []).map(p => (
               <div key={p.id} style={styles.memberRow}>
                 <div style={{ ...styles.memberAv, background: '#BA7517' }}>P</div>
@@ -618,144 +788,91 @@ export default function ChatRoom() {
                   <div style={styles.memberName}>{p.display_name}</div>
                   <div style={styles.memberRole}>provider</div>
                 </div>
-                <button
-                  style={styles.removeBtn}
-                  onClick={async () => {
-                    try {
-                      const res = await api.post('/chat/rooms/' + activeRoom.id + '/remove-provider/', {
-                        provider_id: p.id
-                      })
-                      setActiveRoom(res.data)
-                      api.get('/chat/rooms/').then(r => setRooms(r.data))
-                    } catch {
-                      setError('Failed to remove provider.')
-                      setTimeout(() => setError(''), 3000)
-                    }
-                  }}
-                >✕</button>
+                <button style={styles.removeBtn} onClick={async () => {
+                  try {
+                    const res = await api.post('/chat/rooms/' + activeRoom.id + '/remove-provider/', { provider_id: p.id })
+                    setActiveRoom(res.data)
+                    api.get('/chat/rooms/').then(r => setRooms(r.data))
+                  } catch {
+                    setError('Failed to remove provider.')
+                    setTimeout(() => setError(''), 3000)
+                  }
+                }}>✕</button>
               </div>
             ))}
 
-            {/* Invite provider */}
-            <div style={styles.panelLabel} >INVITE PROVIDER</div>
-            <select
-              style={styles.providerSelect}
-              value={selectedProvider}
-              onChange={e => setSelectedProvider(e.target.value)}
-            >
+            <div style={styles.panelLabel}>INVITE PROVIDER</div>
+            <select style={styles.providerSelect} value={selectedProvider} onChange={e => setSelectedProvider(e.target.value)}>
               <option value="">Select a provider to invite</option>
               {availableProviders
                 .filter(p => !(activeRoom.providers || []).find(ap => ap.id === p.id))
-                .map(p => (
-                  <option key={p.id} value={p.id}>{p.display_name}</option>
-                ))
+                .map(p => <option key={p.id} value={p.id}>{p.display_name}</option>)
               }
             </select>
-            <button style={styles.inviteBtn} onClick={inviteProvider}>
-              + Invite Provider
-            </button>
+            <button style={styles.inviteBtn} onClick={inviteProvider}>+ Invite Provider</button>
             {inviteMsg && <div style={styles.inviteSuccess}>{inviteMsg}</div>}
 
-            {/* Invite client — admin uses dropdown */}
             <div style={{ ...styles.panelLabel, marginTop: 12 }}>INVITE CLIENT</div>
-            <select
-              style={styles.providerSelect}
-              value={selectedClient}
-              onChange={e => setSelectedClient(e.target.value)}
-            >
+            <select style={styles.providerSelect} value={selectedClient} onChange={e => setSelectedClient(e.target.value)}>
               <option value="">Select a client to add</option>
               {availableClients
-                .filter(c =>
-                  c.id !== activeRoom.client?.id &&
-                  !(activeRoom.extra_clients || []).find(ec => ec.id === c.id)
-                )
-                .map(c => (
-                  <option key={c.id} value={c.id}>{c.display_name}</option>
-                ))
+                .filter(c => c.id !== activeRoom.client?.id && !(activeRoom.extra_clients || []).find(ec => ec.id === c.id))
+                .map(c => <option key={c.id} value={c.id}>{c.display_name}</option>)
               }
             </select>
-            <button style={styles.inviteBtn} onClick={inviteClientByDropdown}>
-              + Add Client
-            </button>
+            <button style={styles.inviteBtn} onClick={inviteClientByDropdown}>+ Add Client</button>
             {inviteClientMsg && <div style={styles.inviteSuccess}>{inviteClientMsg}</div>}
           </div>
 
           {/* File Settings */}
           <div style={styles.panelSection}>
             <div style={styles.panelLabel}>FILE SETTINGS</div>
-
             <div style={styles.toggleRow}>
               <div>
                 <div style={styles.toggleLabel}>File Sharing</div>
                 <div style={styles.toggleSub}>Enable/disable for room</div>
               </div>
-              <div
-                style={{ ...styles.toggle, background: filesEnabled ? '#1a56a0' : '#ccc' }}
-                onClick={() => {
-                  const val = !filesEnabled
-                  setFilesEnabled(val)
-                  updateSetting('files_enabled', val)
-                }}
-              >
+              <div style={{ ...styles.toggle, background: filesEnabled ? '#1a56a0' : '#ccc' }}
+                onClick={() => { const val = !filesEnabled; setFilesEnabled(val); updateSetting('files_enabled', val) }}>
                 <div style={{ ...styles.toggleKnob, transform: filesEnabled ? 'translateX(18px)' : 'translateX(2px)' }} />
               </div>
             </div>
-
             <div style={{ ...styles.toggleRow, marginTop: 12 }}>
               <div>
                 <div style={styles.toggleLabel}>Provider → Client</div>
                 <div style={styles.toggleSub}>ON = admin must approve</div>
               </div>
-              <div
-                style={{ ...styles.toggle, background: providerNeedsApproval ? '#1a56a0' : '#ccc' }}
-                onClick={() => {
-                  const val = !providerNeedsApproval
-                  setProviderNeedsApproval(val)
-                  updateSetting('provider_files_need_approval', val)
-                }}
-              >
+              <div style={{ ...styles.toggle, background: providerNeedsApproval ? '#1a56a0' : '#ccc' }}
+                onClick={() => { const val = !providerNeedsApproval; setProviderNeedsApproval(val); updateSetting('provider_files_need_approval', val) }}>
                 <div style={{ ...styles.toggleKnob, transform: providerNeedsApproval ? 'translateX(18px)' : 'translateX(2px)' }} />
               </div>
             </div>
-
             <div style={{ ...styles.toggleRow, marginTop: 12 }}>
               <div>
                 <div style={styles.toggleLabel}>Client → Provider</div>
                 <div style={styles.toggleSub}>ON = admin must approve</div>
               </div>
-              <div
-                style={{ ...styles.toggle, background: clientNeedsApproval ? '#1a56a0' : '#ccc' }}
-                onClick={() => {
-                  const val = !clientNeedsApproval
-                  setClientNeedsApproval(val)
-                  updateSetting('client_files_need_approval', val)
-                }}
-              >
+              <div style={{ ...styles.toggle, background: clientNeedsApproval ? '#1a56a0' : '#ccc' }}
+                onClick={() => { const val = !clientNeedsApproval; setClientNeedsApproval(val); updateSetting('client_files_need_approval', val) }}>
                 <div style={{ ...styles.toggleKnob, transform: clientNeedsApproval ? 'translateX(18px)' : 'translateX(2px)' }} />
               </div>
             </div>
-
             {activeRoom.status !== 'closed' ? (
-              <button
-                style={{ ...styles.closeRoomBtn, marginTop: 14 }}
+              <button style={{ ...styles.closeRoomBtn, marginTop: 14 }}
                 onClick={async () => {
                   if (!window.confirm('Are you sure you want to close this room?')) return
                   try {
                     const res = await api.post('/chat/rooms/' + activeRoom.id + '/close/')
                     setActiveRoom(res.data)
                     api.get('/chat/rooms/').then(r => setRooms(r.data))
-                  } catch {
-                    setError('Failed to close room.')
-                  }
-                }}
-              >
+                  } catch { setError('Failed to close room.') }
+                }}>
                 🔒 Close Room
               </button>
             ) : (
               <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={styles.roomClosedBadge}>🔒 This room is closed</div>
-                <button
-                  style={styles.deleteRoomBtn}
+                <button style={styles.deleteRoomBtn}
                   onClick={async () => {
                     if (!window.confirm('Permanently delete this room? This cannot be undone.')) return
                     try {
@@ -763,14 +880,79 @@ export default function ChatRoom() {
                       const res = await api.get('/chat/rooms/')
                       setRooms(res.data)
                       if (res.data.length > 0) setActiveRoom(res.data[0])
-                    } catch {
-                      setError('Failed to delete room.')
-                    }
-                  }}
-                >
+                    } catch { setError('Failed to delete room.') }
+                  }}>
                   🗑 Delete Room
                 </button>
               </div>
+            )}
+          </div>
+
+          {/* Sound Settings */}
+          <div style={styles.panelSection}>
+            <div style={styles.panelLabel}>NOTIFICATION SOUNDS</div>
+            <div style={styles.toggleRow}>
+              <div>
+                <div style={styles.toggleLabel}>Sound Alerts</div>
+                <div style={styles.toggleSub}>Play sound on new message</div>
+              </div>
+              <div style={{ ...styles.toggle, background: soundEnabled ? '#1a56a0' : '#ccc' }} onClick={toggleSound}>
+                <div style={{ ...styles.toggleKnob, transform: soundEnabled ? 'translateX(18px)' : 'translateX(2px)' }} />
+              </div>
+            </div>
+            {soundEnabled && (
+              <>
+                <div style={{ marginTop: 14 }}>
+                  <div style={styles.soundPickerTitle}>💬 Message Sound</div>
+                  {SOUND_PROFILES.map(profile => (
+                    <div
+                      key={profile.id}
+                      style={{
+                        ...styles.soundOption,
+                        background: messageSoundProfile === profile.id ? '#eef3fc' : 'transparent',
+                        border: messageSoundProfile === profile.id ? '1.5px solid #1a56a0' : '1.5px solid transparent',
+                      }}
+                      onClick={() => changeMessageSoundProfile(profile.id)}
+                    >
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: messageSoundProfile === profile.id ? '#1a56a0' : '#333' }}>
+                          {profile.label}
+                        </div>
+                        <div style={{ fontSize: 10, color: '#aaa' }}>{profile.description}</div>
+                      </div>
+                      <button
+                        style={styles.previewBtn}
+                        onClick={(e) => { e.stopPropagation(); playSound('message', profile.id) }}
+                      >▶</button>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ marginTop: 14 }}>
+                  <div style={styles.soundPickerTitle}>⏳ Pending Approval Sound</div>
+                  {SOUND_PROFILES.map(profile => (
+                    <div
+                      key={profile.id}
+                      style={{
+                        ...styles.soundOption,
+                        background: pendingSoundProfile === profile.id ? '#fff8e1' : 'transparent',
+                        border: pendingSoundProfile === profile.id ? '1.5px solid #BA7517' : '1.5px solid transparent',
+                      }}
+                      onClick={() => changePendingSoundProfile(profile.id)}
+                    >
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: pendingSoundProfile === profile.id ? '#BA7517' : '#333' }}>
+                          {profile.label}
+                        </div>
+                        <div style={{ fontSize: 10, color: '#aaa' }}>{profile.description}</div>
+                      </div>
+                      <button
+                        style={{ ...styles.previewBtn, borderColor: '#BA7517', color: '#BA7517' }}
+                        onClick={(e) => { e.stopPropagation(); playSound('pending', profile.id) }}
+                      >▶</button>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
 
@@ -778,9 +960,7 @@ export default function ChatRoom() {
           <div style={styles.panelSection}>
             <div style={styles.panelLabel}>
               PENDING MESSAGES
-              {pendingMessages.length > 0 && (
-                <span style={styles.pendingCount}> ({pendingMessages.length})</span>
-              )}
+              {pendingMessages.length > 0 && <span style={styles.pendingCount}> ({pendingMessages.length})</span>}
             </div>
             {pendingMessages.length === 0 ? (
               <div style={styles.noPending}>No pending messages</div>
@@ -791,28 +971,20 @@ export default function ChatRoom() {
                   <div style={styles.pendingText}>"{p.body || p.text}"</div>
                   <div style={styles.pendingReason}>⚠️ {p.reason}</div>
                   <div style={styles.pendingBtns}>
-                    <button
-                      style={styles.approveBtn}
-                      onClick={async () => {
-                        try {
-                          await api.post('/chat/admin/messages/' + p.id + '/approve/')
-                          setPendingMessages(prev => prev.filter(x => x.id !== p.id))
-                          setMessages(prev => prev.map(m =>
-                            m.id === p.id ? { ...m, status: 'approved' } : m
-                          ))
-                        } catch { setError('Failed to approve message.') }
-                      }}
-                    >✓ Approve</button>
-                    <button
-                      style={styles.rejectBtn}
-                      onClick={async () => {
-                        try {
-                          await api.post('/chat/admin/messages/' + p.id + '/reject/')
-                          setPendingMessages(prev => prev.filter(x => x.id !== p.id))
-                          setMessages(prev => prev.filter(m => m.id !== p.id))
-                        } catch { setError('Failed to reject message.') }
-                      }}
-                    >✕ Reject</button>
+                    <button style={styles.approveBtn} onClick={async () => {
+                      try {
+                        await api.post('/chat/admin/messages/' + p.id + '/approve/')
+                        setPendingMessages(prev => prev.filter(x => x.id !== p.id))
+                        setMessages(prev => prev.map(m => m.id === p.id ? { ...m, status: 'approved' } : m))
+                      } catch { setError('Failed to approve message.') }
+                    }}>✓ Approve</button>
+                    <button style={styles.rejectBtn} onClick={async () => {
+                      try {
+                        await api.post('/chat/admin/messages/' + p.id + '/reject/')
+                        setPendingMessages(prev => prev.filter(x => x.id !== p.id))
+                        setMessages(prev => prev.filter(m => m.id !== p.id))
+                      } catch { setError('Failed to reject message.') }
+                    }}>✕ Reject</button>
                   </div>
                 </div>
               ))
@@ -823,9 +995,7 @@ export default function ChatRoom() {
           <div style={{ ...styles.panelSection, flex: 1, overflowY: 'auto' }}>
             <div style={styles.panelLabel}>
               PENDING FILES
-              {pendingFiles.length > 0 && (
-                <span style={styles.pendingCount}> ({pendingFiles.length})</span>
-              )}
+              {pendingFiles.length > 0 && <span style={styles.pendingCount}> ({pendingFiles.length})</span>}
             </div>
             {pendingFiles.length === 0 ? (
               <div style={styles.noPending}>No pending files</div>
@@ -833,33 +1003,23 @@ export default function ChatRoom() {
               pendingFiles.map((f) => (
                 <div key={f.id} style={styles.pendingItem}>
                   <div style={styles.pendingFrom}>{f.sender}</div>
-                  <div style={styles.pendingText}>
-                    {isImageFile(f.file_name) ? '🖼️' : '📄'} {f.file_name}
-                  </div>
+                  <div style={styles.pendingText}>{isImageFile(f.file_name) ? '🖼️' : '📄'} {f.file_name}</div>
                   <div style={styles.pendingReason}>📦 {f.file_size}</div>
                   <div style={styles.pendingBtns}>
-                    <button
-                      style={styles.approveBtn}
-                      onClick={async () => {
-                        try {
-                          await api.post('/chat/admin/files/' + f.id + '/approve/')
-                          setPendingFiles(prev => prev.filter(x => x.id !== f.id))
-                          setMessages(prev => prev.map(m =>
-                            m.id === 'file_pending_' + f.id ? { ...m, status: 'approved' } : m
-                          ))
-                        } catch { setError('Failed to approve file.') }
-                      }}
-                    >✓ Approve</button>
-                    <button
-                      style={styles.rejectBtn}
-                      onClick={async () => {
-                        try {
-                          await api.post('/chat/admin/files/' + f.id + '/reject/')
-                          setPendingFiles(prev => prev.filter(x => x.id !== f.id))
-                          setMessages(prev => prev.filter(m => m.id !== 'file_pending_' + f.id))
-                        } catch { setError('Failed to reject file.') }
-                      }}
-                    >✕ Reject</button>
+                    <button style={styles.approveBtn} onClick={async () => {
+                      try {
+                        await api.post('/chat/admin/files/' + f.id + '/approve/')
+                        setPendingFiles(prev => prev.filter(x => x.id !== f.id))
+                        setMessages(prev => prev.map(m => m.id === 'file_pending_' + f.id ? { ...m, status: 'approved' } : m))
+                      } catch { setError('Failed to approve file.') }
+                    }}>✓ Approve</button>
+                    <button style={styles.rejectBtn} onClick={async () => {
+                      try {
+                        await api.post('/chat/admin/files/' + f.id + '/reject/')
+                        setPendingFiles(prev => prev.filter(x => x.id !== f.id))
+                        setMessages(prev => prev.filter(m => m.id !== 'file_pending_' + f.id))
+                      } catch { setError('Failed to reject file.') }
+                    }}>✕ Reject</button>
                   </div>
                 </div>
               ))
@@ -891,11 +1051,15 @@ const styles = {
   roomItemTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   roomName: { fontSize: '13px', fontWeight: '600' },
   roomSub: { fontSize: '11px', marginTop: '3px' },
+  unreadBadge: { background: '#e53e3e', color: '#fff', fontSize: '10px', fontWeight: '700', padding: '2px 6px', borderRadius: '10px', minWidth: '18px', textAlign: 'center' },
+  adminBadge: { position: 'absolute', top: '-4px', right: '-4px', background: '#e53e3e', color: '#fff', fontSize: '9px', fontWeight: '700', padding: '1px 4px', borderRadius: '8px', minWidth: '14px', textAlign: 'center' },
   logoutBtn: { margin: '12px', padding: '9px', border: '1px solid #ddd', borderRadius: '8px', background: 'none', color: '#888', fontSize: '13px', cursor: 'pointer', textAlign: 'center' },
   main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   chatHeader: { padding: '14px 20px', background: '#fff', borderBottom: '1px solid #e5e5e5', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
   chatHeaderLeft: { display: 'flex', alignItems: 'center', gap: '12px' },
-  menuBtn: { background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#555', padding: '0 4px' },
+  chatHeaderRight: { display: 'flex', alignItems: 'center', gap: '8px' },
+  menuBtn: { background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#555', padding: '0 4px', position: 'relative' },
+  soundBtn: { background: 'none', border: '1px solid #e5e5e5', borderRadius: '8px', fontSize: '16px', cursor: 'pointer', padding: '4px 8px', color: '#555', lineHeight: 1 },
   chatTitle: { fontSize: '15px', fontWeight: '600', color: '#1a1a1a' },
   chatSub: { fontSize: '12px', color: '#888', marginTop: '2px' },
   headerBadge: { background: '#f0f4ff', color: '#1a56a0', fontSize: '12px', fontWeight: '600', padding: '4px 12px', borderRadius: '20px' },
@@ -914,9 +1078,13 @@ const styles = {
   fileBubbleMeta: { fontSize: '11px', color: '#888', marginTop: '2px' },
   fileDl: { display: 'block', marginTop: '10px', fontSize: '12px', color: '#1a56a0', fontWeight: '600', textDecoration: 'none' },
   inputArea: { padding: '12px 20px 16px', background: '#fff', borderTop: '1px solid #e5e5e5' },
+  // Target selector
+  targetRow: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' },
+  targetLabel: { fontSize: 11, color: '#888', fontWeight: 600, marginRight: 2 },
+  targetBtn: { fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1.5px solid', cursor: 'pointer', transition: 'all 0.15s' },
   inputRow: { display: 'flex', gap: '8px', alignItems: 'flex-end' },
   attachBtn: { background: 'none', border: '1px solid #ddd', borderRadius: '8px', padding: '8px 10px', fontSize: '16px', cursor: 'pointer', flexShrink: 0 },
-  input: { flex: 1, padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #ddd', fontSize: '14px', outline: 'none', resize: 'none', fontFamily: 'Arial, sans-serif', lineHeight: '1.5' },
+  input: { flex: 1, padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #ddd', fontSize: '14px', outline: 'none', resize: 'none', fontFamily: 'Arial, sans-serif', lineHeight: '1.5', transition: 'border-color 0.2s' },
   sendBtn: { background: '#1a56a0', color: '#fff', border: 'none', borderRadius: '8px', padding: '10px 16px', fontSize: '18px', cursor: 'pointer', flexShrink: 0 },
   sendBtnDisabled: { background: '#ddd', color: '#aaa', border: 'none', borderRadius: '8px', padding: '10px 16px', fontSize: '18px', cursor: 'not-allowed', flexShrink: 0 },
   inputHint: { fontSize: '11px', color: '#bbb', marginTop: '6px', textAlign: 'center' },
@@ -925,7 +1093,7 @@ const styles = {
   inviteClientBtn: { padding: '7px 14px', borderRadius: '8px', border: 'none', background: '#1a56a0', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
   adminPanel: { width: '260px', background: '#ffffff', borderLeft: '1px solid #e5e5e5', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: 'auto' },
   adminHeader: { padding: '14px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, #1a56a0, #0d3b6e)' },
-  adminTitle: { fontSize: '14px', fontWeight: '600', color: '#ffffff' },
+  adminTitle: { fontSize: '14px', fontWeight: '600', color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 },
   closePanel: { background: 'none', border: 'none', color: '#BDD7F5', fontSize: '16px', cursor: 'pointer' },
   panelSection: { padding: '12px 16px', borderBottom: '1px solid #f0f0f0' },
   panelLabel: { fontSize: '10px', fontWeight: '600', color: '#888', letterSpacing: '0.08em', marginBottom: '10px' },
@@ -942,6 +1110,9 @@ const styles = {
   toggleSub: { fontSize: '10px', color: '#aaa', marginTop: '1px' },
   toggle: { width: '38px', height: '20px', borderRadius: '20px', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0 },
   toggleKnob: { position: 'absolute', top: '2px', width: '16px', height: '16px', borderRadius: '50%', background: '#fff', transition: 'transform 0.2s' },
+  soundPickerTitle: { fontSize: 11, fontWeight: 600, color: '#555', marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid #f0f0f0' },
+  soundOption: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', borderRadius: 8, marginBottom: 3, cursor: 'pointer' },
+  previewBtn: { background: 'none', border: '1px solid #1a56a0', borderRadius: 6, padding: '3px 7px', fontSize: 11, cursor: 'pointer', color: '#1a56a0', flexShrink: 0 },
   pendingItem: { background: '#fff8e1', border: '1px solid #f0d080', borderRadius: '8px', padding: '8px 10px', marginBottom: '8px' },
   pendingFrom: { fontSize: '11px', fontWeight: '600', color: '#444', marginBottom: '3px' },
   pendingText: { fontSize: '12px', color: '#1a1a1a', marginBottom: '4px', wordBreak: 'break-all' },

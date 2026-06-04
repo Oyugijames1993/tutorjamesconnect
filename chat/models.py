@@ -40,10 +40,17 @@ class Message(models.Model):
         ('rejected', 'Rejected'),
     ]
 
+    TARGET_CHOICES = [
+        ('everyone', 'Everyone'),
+        ('client',   'Client only'),
+        ('provider', 'Provider only'),
+    ]
+
     room        = models.ForeignKey(ChatRoom, on_delete=models.CASCADE, related_name='messages')
     sender      = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     body        = models.TextField()
     status      = models.CharField(max_length=10, choices=STATUS_CHOICES, default='sent')
+    target      = models.CharField(max_length=10, choices=TARGET_CHOICES, default='everyone')
     flagged     = models.BooleanField(default=False)
     flag_reason = models.CharField(max_length=200, blank=True)
     timestamp   = models.DateTimeField(auto_now_add=True)

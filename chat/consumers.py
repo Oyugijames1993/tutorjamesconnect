@@ -46,8 +46,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_discard(self.room_group, self.channel_name)
 
     async def receive(self, text_data):
-        data = json.loads(text_data)
-        body = data.get('body', '').strip()
+        data   = json.loads(text_data)
+        body   = data.get('body', '').strip()
+        target = data.get('target', 'everyone') if self.user.role == 'admin' else 'everyone'
 
         if not body:
             return
@@ -72,7 +73,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
 
         if action == ACTION_HOLD:
-            msg = await self.save_message(room, body, 'pending', reason)
+            msg = await self.save_message(room, body, 'pending', reason, target)
             await self.send(text_data=json.dumps({
                 'type':   'pending',
                 'id':     msg.id,
@@ -81,6 +82,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'reason': reason,
                 'sender': user.display_name,
                 'role':   user.role,
+                'target': target,
                 'time':   msg.timestamp.strftime('%H:%M'),
             }))
             await self.channel_layer.group_send(
@@ -93,6 +95,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'sender':    user.display_name,
                     'room_id':   self.room_id,
                     'room_name': room.name,
+                    'target':    target,
                 }
             )
             await self.channel_layer.group_send(
@@ -105,12 +108,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'reason': reason,
                     'sender': user.display_name,
                     'role':   user.role,
+                    'target': target,
                     'time':   msg.timestamp.strftime('%H:%M'),
                 }
             )
             return
 
-        msg = await self.save_message(room, body, 'sent', '')
+        msg = await self.save_message(room, body, 'sent', '', target)
         await self.channel_layer.group_send(
             self.room_group,
             {
@@ -119,6 +123,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'body':   body,
                 'sender': user.display_name,
                 'role':   user.role,
+                'target': target,
                 'time':   msg.timestamp.strftime('%H:%M'),
             }
         )
@@ -126,16 +131,34 @@ class ChatConsumer(AsyncWebsocketConsumer):
     # ── Event handlers ────────────────────────────────────────────────────────
 
     async def chat_message(self, event):
+        target = event.get('target', 'everyone')
+        role   = self.user.role
+        print(f"DEBUG: user={self.user.username}, role={role}, target={target}")
+
+        if target == 'client' and role == 'provider':
+            return
+        if target == 'provider' and role == 'client':
+            return
+
         await self.send(text_data=json.dumps({
             'type':   'message',
             'id':     event['id'],
             'body':   event['body'],
             'sender': event['sender'],
             'role':   event['role'],
+            'target': target,
             'time':   event['time'],
         }))
 
     async def flagged_message(self, event):
+        target = event.get('target', 'everyone')
+        role   = self.user.role
+
+        if target == 'client' and role == 'provider':
+            return
+        if target == 'provider' and role == 'client':
+            return
+
         await self.send(text_data=json.dumps({
             'type':   'message',
             'id':     event['id'],
@@ -144,6 +167,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'reason': event['reason'],
             'sender': event['sender'],
             'role':   event['role'],
+            'target': target,
             'time':   event['time'],
         }))
 
@@ -164,15 +188,25 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'sender':    event['sender'],
             'room_id':   event['room_id'],
             'room_name': event['room_name'],
+            'target':    event.get('target', 'everyone'),
         }))
 
     async def approved_message(self, event):
+        target = event.get('target', 'everyone')
+        role   = self.user.role
+
+        if target == 'client' and role == 'provider':
+            return
+        if target == 'provider' and role == 'client':
+            return
+
         await self.send(text_data=json.dumps({
             'type':   'message',
             'id':     event['id'],
             'body':   event['body'],
             'sender': event['sender'],
             'role':   event['role'],
+            'target': target,
             'time':   event['time'],
         }))
 
@@ -215,8 +249,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
         from django.conf import settings
 
         room = ChatRoom.objects.get(pk=self.room_id)
+        role = self.user.role
 
-        if self.user.role == 'admin':
+        if role == 'admin':
             msgs = list(
                 room.messages.filter(status__in=['sent', 'approved', 'pending'])
                 .select_related('sender')
@@ -225,6 +260,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         else:
             msgs = list(
                 room.messages.filter(status__in=['sent', 'approved'])
+                .exclude(target='provider' if role == 'client' else 'client')
                 .select_related('sender')
                 .order_by('timestamp')[:50]
             )
@@ -237,13 +273,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'sender': m.sender.display_name,
                 'role':   m.sender.role,
                 'status': m.status,
+                'target': m.target,
                 'time':   m.timestamp.strftime('%H:%M'),
                 '_ts':    m.timestamp,
             }
             for m in msgs
         ]
 
-        if self.user.role == 'admin':
+        if role == 'admin':
             files = list(
                 room.files.filter(status__in=['approved', 'direct', 'pending'])
                 .select_related('sender')
@@ -282,12 +319,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
         return combined
 
     @database_sync_to_async
-    def save_message(self, room, body, msg_status, flag_reason):
+    def save_message(self, room, body, msg_status, flag_reason, target='everyone'):
         return Message.objects.create(
             room        = room,
             sender      = self.user,
             body        = body,
             status      = msg_status,
+            target      = target,
             flagged     = bool(flag_reason),
             flag_reason = flag_reason,
         )

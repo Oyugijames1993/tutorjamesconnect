@@ -1,25 +1,22 @@
-// src/services/websocket.js
-
 class ChatWebSocket {
   constructor(roomId, token, onMessage) {
-    this.roomId      = roomId
-    this.token       = token
-    this.onMessage   = onMessage
-    this.ws          = null
+    this.roomId         = roomId
+    this.token          = token
+    this.onMessage      = onMessage
+    this.ws             = null
     this.reconnectTimer = null
-    this.isConnected = false
+    this.isConnected    = false
     this.intentionalClose = false
   }
 
   connect() {
-    // Prevent multiple connections
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return
 
     const url = `ws://localhost:8000/ws/chat/${this.roomId}/?token=${this.token}`
     this.ws = new WebSocket(url)
 
     this.ws.onopen = () => {
-      this.isConnected = true
+      this.isConnected    = true
       this.intentionalClose = false
       console.log(`Connected to room ${this.roomId}`)
       this.onMessage({ type: 'connected' })
@@ -43,9 +40,10 @@ class ChatWebSocket {
     }
   }
 
-  send(body) {
+  // target: 'everyone' | 'client' | 'provider'
+  send(body, target = 'everyone') {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ body }))
+      this.ws.send(JSON.stringify({ body, target }))
     }
   }
 
