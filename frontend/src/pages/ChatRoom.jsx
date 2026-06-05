@@ -9,6 +9,7 @@ export default function ChatRoom() {
   const { user, logout } = useAuth()
   const { roomId }       = useParams()
   const isAdmin          = user?.role === 'admin'
+  const isProvider       = user?.role === 'provider'
 
   const [messages, setMessages]               = useState([])
   const [rooms, setRooms]                     = useState([])
@@ -31,10 +32,7 @@ export default function ChatRoom() {
   const [inviteClientMsg, setInviteClientMsg]       = useState('')
   const [invitePhone, setInvitePhone]               = useState('')
   const [unreadCounts, setUnreadCounts]             = useState({})
-
-  // ── Message targeting (admin only) ────────────────────────────────────────
-  const [messageTarget, setMessageTarget] = useState('everyone')
-  // ──────────────────────────────────────────────────────────────────────────
+  const [messageTarget, setMessageTarget]           = useState('everyone')
 
   // ── Sound notifications ────────────────────────────────────────────────────
   const [soundEnabled, setSoundEnabled] = useState(() => {
@@ -244,11 +242,10 @@ export default function ChatRoom() {
 
   const sendMessage = () => {
     if (!input.trim() || !connected) return
-    // Pass target for admin, always 'everyone' for others
-    wsRef.current.send(input.trim(), isAdmin ? messageTarget : 'everyone')
+    const target = (isAdmin || isProvider) ? messageTarget : 'everyone'
+    wsRef.current.send(input.trim(), target)
     setInput('')
-    // Reset target to everyone after sending
-    if (isAdmin) setMessageTarget('everyone')
+    if (isAdmin || isProvider) setMessageTarget('everyone')
   }
 
   const handleFileUpload = async (e) => {
@@ -363,10 +360,10 @@ export default function ChatRoom() {
     return /\.(jpg|jpeg|png|gif|webp)$/i.test(filename)
   }
 
-  // Target label shown on messages (admin sees this on targeted messages)
   const targetLabel = (target) => {
     if (target === 'client')   return { text: '👤 Client only',   color: '#1a7a4a', bg: '#e6f4ed' }
     if (target === 'provider') return { text: '🔧 Provider only', color: '#BA7517', bg: '#fff3e0' }
+    if (target === 'admin')    return { text: '🔑 Admin only',    color: '#1a56a0', bg: '#eef3fc' }
     return null
   }
 
@@ -557,7 +554,7 @@ export default function ChatRoom() {
             const isMe       = msg.sender === user?.display_name
             const isAdminMsg = msg.role === 'admin'
             const isFlagged  = msg.status === 'pending'
-            const tLabel     = isAdmin ? targetLabel(msg.target) : null
+            const tLabel     = (isAdmin || isProvider) ? targetLabel(msg.target) : null
 
             return (
               <div key={msg.id || idx} style={{ ...styles.msgRow, justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
@@ -609,7 +606,6 @@ export default function ChatRoom() {
                       </div>
                     )}
                   </div>
-                  {/* Target label — only admin sees this */}
                   {tLabel && (
                     <div style={{
                       display: 'inline-block',
@@ -663,23 +659,26 @@ export default function ChatRoom() {
         )}
 
         <div style={styles.inputArea}>
-          {/* Target selector — admin only */}
-          {isAdmin && activeRoom.status !== 'closed' && (
+          {/* Target selector — admin and provider only */}
+          {(isAdmin || isProvider) && activeRoom.status !== 'closed' && (
             <div style={styles.targetRow}>
               <span style={styles.targetLabel}>Send to:</span>
-              {[
+              {(isAdmin ? [
                 { value: 'everyone', label: '🌐 Everyone' },
                 { value: 'client',   label: '👤 Client only' },
                 { value: 'provider', label: '🔧 Provider only' },
-              ].map(opt => (
+              ] : [
+                { value: 'everyone', label: '🌐 Everyone' },
+                { value: 'admin',    label: '🔑 Admin only' },
+              ]).map(opt => (
                 <button
                   key={opt.value}
                   style={{
                     ...styles.targetBtn,
-                    background:   messageTarget === opt.value ? '#1a56a0' : '#f0f0f0',
-                    color:        messageTarget === opt.value ? '#fff' : '#555',
-                    borderColor:  messageTarget === opt.value ? '#1a56a0' : '#ddd',
-                    fontWeight:   messageTarget === opt.value ? 700 : 400,
+                    background:  messageTarget === opt.value ? '#1a56a0' : '#f0f0f0',
+                    color:       messageTarget === opt.value ? '#fff' : '#555',
+                    borderColor: messageTarget === opt.value ? '#1a56a0' : '#ddd',
+                    fontWeight:  messageTarget === opt.value ? 700 : 400,
                   }}
                   onClick={() => setMessageTarget(opt.value)}
                 >
@@ -704,12 +703,16 @@ export default function ChatRoom() {
             <textarea
               style={{
                 ...styles.input,
-                borderColor: messageTarget === 'client' ? '#1a7a4a' : messageTarget === 'provider' ? '#BA7517' : '#ddd',
+                borderColor: messageTarget === 'client'   ? '#1a7a4a'
+                           : messageTarget === 'provider' ? '#BA7517'
+                           : messageTarget === 'admin'    ? '#1a56a0'
+                           : '#ddd',
               }}
               placeholder={
                 connected
                   ? messageTarget === 'client'   ? 'Message to client only...'
                   : messageTarget === 'provider' ? 'Message to provider only...'
+                  : messageTarget === 'admin'    ? 'Private message to admin...'
                   : 'Type a message...'
                   : 'Connecting...'
               }
@@ -1078,7 +1081,6 @@ const styles = {
   fileBubbleMeta: { fontSize: '11px', color: '#888', marginTop: '2px' },
   fileDl: { display: 'block', marginTop: '10px', fontSize: '12px', color: '#1a56a0', fontWeight: '600', textDecoration: 'none' },
   inputArea: { padding: '12px 20px 16px', background: '#fff', borderTop: '1px solid #e5e5e5' },
-  // Target selector
   targetRow: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' },
   targetLabel: { fontSize: 11, color: '#888', fontWeight: 600, marginRight: 2 },
   targetBtn: { fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1.5px solid', cursor: 'pointer', transition: 'all 0.15s' },

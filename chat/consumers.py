@@ -46,9 +46,23 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_discard(self.room_group, self.channel_name)
 
     async def receive(self, text_data):
-        data   = json.loads(text_data)
-        body   = data.get('body', '').strip()
-        target = data.get('target', 'everyone') if self.user.role == 'admin' else 'everyone'
+        data = json.loads(text_data)
+        body = data.get('body', '').strip()
+        role = self.user.role
+
+        # Target rules per role:
+        # admin    → everyone | client | provider
+        # provider → everyone | admin
+        # client   → everyone only
+        if role == 'admin':
+            target = data.get('target', 'everyone')
+            if target not in ('everyone', 'client', 'provider'):
+                target = 'everyone'
+        elif role == 'provider':
+            requested = data.get('target', 'everyone')
+            target = requested if requested in ('everyone', 'admin') else 'everyone'
+        else:
+            target = 'everyone'
 
         if not body:
             return
@@ -128,16 +142,26 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }
         )
 
+    # ── Visibility helper ─────────────────────────────────────────────────────
+
+    def _can_see(self, target, role):
+        if role == 'admin':
+            return True
+        if target == 'everyone':
+            return True
+        if target == 'client'   and role == 'client':   return True
+        if target == 'provider' and role == 'provider': return True
+        if target == 'admin':
+            return False  # only admin sees admin-targeted messages
+        return False
+
     # ── Event handlers ────────────────────────────────────────────────────────
 
     async def chat_message(self, event):
         target = event.get('target', 'everyone')
         role   = self.user.role
-        print(f"DEBUG: user={self.user.username}, role={role}, target={target}")
 
-        if target == 'client' and role == 'provider':
-            return
-        if target == 'provider' and role == 'client':
+        if not self._can_see(target, role):
             return
 
         await self.send(text_data=json.dumps({
@@ -154,9 +178,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         target = event.get('target', 'everyone')
         role   = self.user.role
 
-        if target == 'client' and role == 'provider':
-            return
-        if target == 'provider' and role == 'client':
+        if not self._can_see(target, role):
             return
 
         await self.send(text_data=json.dumps({
@@ -195,9 +217,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         target = event.get('target', 'everyone')
         role   = self.user.role
 
-        if target == 'client' and role == 'provider':
-            return
-        if target == 'provider' and role == 'client':
+        if not self._can_see(target, role):
             return
 
         await self.send(text_data=json.dumps({
@@ -257,10 +277,20 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 .select_related('sender')
                 .order_by('timestamp')[:50]
             )
-        else:
+        elif role == 'provider':
+            # Provider sees: everyone, provider-targeted, admin-targeted they sent
             msgs = list(
                 room.messages.filter(status__in=['sent', 'approved'])
-                .exclude(target='provider' if role == 'client' else 'client')
+                .exclude(target='client')
+                .exclude(target='admin', sender__role='admin')
+                .select_related('sender')
+                .order_by('timestamp')[:50]
+            )
+        else:
+            # Client sees: everyone and client-targeted only
+            msgs = list(
+                room.messages.filter(status__in=['sent', 'approved'])
+                .filter(target__in=['everyone', 'client'])
                 .select_related('sender')
                 .order_by('timestamp')[:50]
             )

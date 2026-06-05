@@ -40,10 +40,12 @@ class Message(models.Model):
         ('rejected', 'Rejected'),
     ]
 
+
     TARGET_CHOICES = [
         ('everyone', 'Everyone'),
-        ('client',   'Client only'),
+        ('client', 'Client only'),
         ('provider', 'Provider only'),
+        ('admin', 'Admin only'),
     ]
 
     room        = models.ForeignKey(ChatRoom, on_delete=models.CASCADE, related_name='messages')
