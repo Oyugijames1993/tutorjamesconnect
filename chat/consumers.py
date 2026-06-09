@@ -50,10 +50,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         body = data.get('body', '').strip()
         role = self.user.role
 
-        # Target rules per role:
-        # admin    → everyone | client | provider
-        # provider → everyone | admin
-        # client   → everyone only
         if role == 'admin':
             target = data.get('target', 'everyone')
             if target not in ('everyone', 'client', 'provider'):
@@ -67,7 +63,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if not body:
             return
 
-        user = self.user
         room = await self.get_room()
 
         if not room or room.status == 'closed':
@@ -77,7 +72,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }))
             return
 
-        action, reason = moderate_message(user.role, body)
+        action, reason = moderate_message(self.user.role, body)
 
         if action == ACTION_BLOCK:
             await self.send(text_data=json.dumps({
@@ -94,8 +89,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'body':   body,
                 'status': 'pending',
                 'reason': reason,
-                'sender': user.display_name,
-                'role':   user.role,
+                'sender': self.user.display_name,
+                'role':   self.user.role,
                 'target': target,
                 'time':   msg.timestamp.strftime('%H:%M'),
             }))
@@ -106,7 +101,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'id':        msg.id,
                     'body':      body,
                     'reason':    reason,
-                    'sender':    user.display_name,
+                    'sender':    self.user.display_name,
                     'room_id':   self.room_id,
                     'room_name': room.name,
                     'target':    target,
@@ -115,28 +110,30 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_send(
                 self.room_group,
                 {
-                    'type':   'flagged_message',
-                    'id':     msg.id,
-                    'body':   body,
-                    'status': 'pending',
-                    'reason': reason,
-                    'sender': user.display_name,
-                    'role':   user.role,
-                    'target': target,
-                    'time':   msg.timestamp.strftime('%H:%M'),
+                    'type':           'flagged_message',
+                    'id':             msg.id,
+                    'body':           body,
+                    'status':         'pending',
+                    'reason':         reason,
+                    'sender':         self.user.display_name,
+                    'sender_channel': self.channel_name,
+                    'role':           self.user.role,
+                    'target':         target,
+                    'time':           msg.timestamp.strftime('%H:%M'),
                 }
             )
             return
 
         msg = await self.save_message(room, body, 'sent', '', target)
+        print(f"[receive] sender={self.user.username} role={self.user.role} target={target} body={body[:30]}")
         await self.channel_layer.group_send(
             self.room_group,
             {
                 'type':   'chat_message',
                 'id':     msg.id,
                 'body':   body,
-                'sender': user.display_name,
-                'role':   user.role,
+                'sender': self.user.display_name,
+                'role':   self.user.role,
                 'target': target,
                 'time':   msg.timestamp.strftime('%H:%M'),
             }
@@ -151,8 +148,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return True
         if target == 'client'   and role == 'client':   return True
         if target == 'provider' and role == 'provider': return True
-        if target == 'admin':
-            return False  # only admin sees admin-targeted messages
         return False
 
     # ── Event handlers ────────────────────────────────────────────────────────
@@ -160,8 +155,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def chat_message(self, event):
         target = event.get('target', 'everyone')
         role   = self.user.role
+        can    = self._can_see(target, role)
 
-        if not self._can_see(target, role):
+        print(f"[chat_message] user={self.user.username} role={role} target={target} can_see={can}")
+
+        if not can:
             return
 
         await self.send(text_data=json.dumps({
@@ -175,10 +173,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
 
     async def flagged_message(self, event):
-        target = event.get('target', 'everyone')
-        role   = self.user.role
+        role = self.user.role
 
-        if not self._can_see(target, role):
+        # Only admin sees flagged bubble — sender already got their own pending bubble
+        if role != 'admin':
             return
 
         await self.send(text_data=json.dumps({
@@ -189,7 +187,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'reason': event['reason'],
             'sender': event['sender'],
             'role':   event['role'],
-            'target': target,
+            'target': event.get('target', 'everyone'),
             'time':   event['time'],
         }))
 
@@ -278,16 +276,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 .order_by('timestamp')[:50]
             )
         elif role == 'provider':
-            # Provider sees: everyone, provider-targeted, admin-targeted they sent
             msgs = list(
                 room.messages.filter(status__in=['sent', 'approved'])
-                .exclude(target='client')
-                .exclude(target='admin', sender__role='admin')
+                .filter(target__in=['everyone', 'provider'])
                 .select_related('sender')
                 .order_by('timestamp')[:50]
             )
         else:
-            # Client sees: everyone and client-targeted only
             msgs = list(
                 room.messages.filter(status__in=['sent', 'approved'])
                 .filter(target__in=['everyone', 'client'])

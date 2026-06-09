@@ -240,12 +240,12 @@ export default function ChatRoom() {
     return () => { if (wsRef.current) wsRef.current.disconnect() }
   }, [activeRoom, soundEnabled, isAdmin, playSound, messageSoundProfile, pendingSoundProfile, user?.display_name])
 
+
   const sendMessage = () => {
     if (!input.trim() || !connected) return
     const target = (isAdmin || isProvider) ? messageTarget : 'everyone'
     wsRef.current.send(input.trim(), target)
     setInput('')
-    if (isAdmin || isProvider) setMessageTarget('everyone')
   }
 
   const handleFileUpload = async (e) => {
