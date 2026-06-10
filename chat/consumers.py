@@ -83,8 +83,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         if action == ACTION_HOLD:
             msg = await self.save_message(room, body, 'pending', reason, target)
+
+            # ── Sender sees their own pending bubble immediately ──────────────
             await self.send(text_data=json.dumps({
-                'type':   'pending',
+                'type':   'message',
                 'id':     msg.id,
                 'body':   body,
                 'status': 'pending',
@@ -94,6 +96,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'target': target,
                 'time':   msg.timestamp.strftime('%H:%M'),
             }))
+
+            # ── Notify admin panel ────────────────────────────────────────────
             await self.channel_layer.group_send(
                 'admin_pending',
                 {
@@ -107,6 +111,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'target':    target,
                 }
             )
+
+            # ── Show flagged bubble in room to admin only ─────────────────────
+            # (sender already got it directly above — no double send)
             await self.channel_layer.group_send(
                 self.room_group,
                 {
@@ -125,25 +132,35 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
 
         msg = await self.save_message(room, body, 'sent', '', target)
-        print(f"[receive] sender={self.user.username} role={self.user.role} target={target} body={body[:30]}")
         await self.channel_layer.group_send(
             self.room_group,
             {
-                'type':   'chat_message',
-                'id':     msg.id,
-                'body':   body,
-                'sender': self.user.display_name,
-                'role':   self.user.role,
-                'target': target,
-                'time':   msg.timestamp.strftime('%H:%M'),
+                'type':           'chat_message',
+                'id':             msg.id,
+                'body':           body,
+                'sender':         self.user.display_name,
+                'sender_channel': self.channel_name,   # ← added so sender can be identified
+                'role':           self.user.role,
+                'target':         target,
+                'time':           msg.timestamp.strftime('%H:%M'),
             }
         )
 
     # ── Visibility helper ─────────────────────────────────────────────────────
 
-    def _can_see(self, target, role):
+    def _can_see(self, target, role, is_sender=False):
+        """
+        - Admin always sees everything
+        - Sender always sees their own message (even target=admin for provider)
+        - 'everyone'  → all roles
+        - 'client'    → only clients
+        - 'provider'  → only providers
+        - 'admin'     → only admin (and original sender)
+        """
         if role == 'admin':
             return True
+        if is_sender:
+            return True         # sender always sees their own message
         if target == 'everyone':
             return True
         if target == 'client'   and role == 'client':   return True
@@ -153,13 +170,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
     # ── Event handlers ────────────────────────────────────────────────────────
 
     async def chat_message(self, event):
-        target = event.get('target', 'everyone')
-        role   = self.user.role
-        can    = self._can_see(target, role)
+        target    = event.get('target', 'everyone')
+        role      = self.user.role
+        is_sender = event.get('sender_channel') == self.channel_name
 
-        print(f"[chat_message] user={self.user.username} role={role} target={target} can_see={can}")
-
-        if not can:
+        if not self._can_see(target, role, is_sender):
             return
 
         await self.send(text_data=json.dumps({
@@ -173,9 +188,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
 
     async def flagged_message(self, event):
-        role = self.user.role
+        """
+        Pending message in room — only admin sees this group event.
+        The sender already received their bubble directly in receive().
+        """
+        role      = self.user.role
+        is_sender = event.get('sender_channel') == self.channel_name
 
-        # Only admin sees flagged bubble — sender already got their own pending bubble
+        # Sender already got it directly — skip to avoid double bubble
+        if is_sender:
+            return
+
+        # Only admin sees flagged bubbles in the room
         if role != 'admin':
             return
 
@@ -212,10 +236,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
 
     async def approved_message(self, event):
-        target = event.get('target', 'everyone')
-        role   = self.user.role
+        target    = event.get('target', 'everyone')
+        role      = self.user.role
+        is_sender = event.get('sender_channel') == self.channel_name
 
-        if not self._can_see(target, role):
+        if not self._can_see(target, role, is_sender):
             return
 
         await self.send(text_data=json.dumps({
@@ -265,6 +290,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def get_messages(self):
         from django.conf import settings
+        from django.db.models import Q
 
         room = ChatRoom.objects.get(pk=self.room_id)
         role = self.user.role
@@ -275,14 +301,29 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 .select_related('sender')
                 .order_by('timestamp')[:50]
             )
+
         elif role == 'provider':
+            # Messages visible to provider:
+            # 1. everyone/provider-targeted messages (sent/approved)
+            # 2. admin-targeted messages sent BY this provider (their own)
+            # 3. pending messages sent BY this provider
             msgs = list(
-                room.messages.filter(status__in=['sent', 'approved'])
-                .filter(target__in=['everyone', 'provider'])
+                room.messages.filter(
+                    Q(status__in=['sent', 'approved'], target__in=['everyone', 'provider']) |
+                    Q(sender=self.user)  # all own messages regardless of target/status
+                )
                 .select_related('sender')
                 .order_by('timestamp')[:50]
             )
+            # Deduplicate
+            seen = set(); unique = []
+            for m in msgs:
+                if m.id not in seen:
+                    seen.add(m.id); unique.append(m)
+            msgs = unique
+
         else:
+            # Client
             msgs = list(
                 room.messages.filter(status__in=['sent', 'approved'])
                 .filter(target__in=['everyone', 'client'])
@@ -311,6 +352,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 .select_related('sender')
                 .order_by('uploaded_at')[:20]
             )
+        elif role == 'provider':
+            # Provider sees approved/direct files + their own pending files
+            files = list(
+                room.files.filter(
+                    Q(status__in=['approved', 'direct']) |
+                    Q(sender=self.user, status='pending')
+                )
+                .select_related('sender')
+                .order_by('uploaded_at')[:20]
+            )
         else:
             files = list(
                 room.files.filter(status__in=['approved', 'direct'])
@@ -330,7 +381,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'file_id':   f.id,
                 'file_name': f.file_name,
                 'file_size': _fmt_size(f.file_size),
-                'file_url':  url,
+                # pending files have no download URL yet
+                'file_url':  url if f.status in ['approved', 'direct'] else None,
                 'sender':    f.sender.display_name,
                 'role':      f.sender.role,
                 'status':    f.status,
