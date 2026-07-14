@@ -30,7 +30,11 @@ def _is_room_member(room, user):
         return True
     if user.id == room.client_id:
         return True
-    return room.providers.filter(id=user.id).exists()
+    if room.providers.filter(id=user.id).exists():
+        return True
+    if room.extra_clients.filter(id=user.id).exists():
+        return True
+    return False
 
 
 class UploadFileView(APIView):
@@ -74,35 +78,47 @@ class UploadFileView(APIView):
         )
 
         if needs_approval:
+            # Admin gets a real, previewable URL — this group is admin-only
+            # (AdminConsumer.connect() rejects non-admins), so it's safe to
+            # include the file URL here even though the file isn't approved yet.
             _push_to_group('admin_pending', {
                 'type':      'pending_file',
                 'id':        shared.id,
                 'file_name': shared.file_name,
                 'file_size': _format_size(shared.file_size),
+                'file_url':  request.build_absolute_uri(shared.file.url),
                 'sender':    user.display_name,
                 'room_id':   room.id,
                 'room_name': room.name,
             })
             return Response({
-                'detail':  'File uploaded and pending admin approval.',
-                'file_id': shared.id,
-                'status':  'pending',
+                'detail':    'File uploaded and pending admin approval.',
+                'id':        shared.id,
+                'file_id':   shared.id,
+                'file_name': shared.file_name,
+                'file_size': _format_size(shared.file_size),
+                'status':    'pending',
             }, status=status.HTTP_201_CREATED)
 
+        file_url = request.build_absolute_uri(shared.file.url)
         _push_to_group(f'chat_{room.id}', {
             'type':      'file_approved',
             'id':        shared.id,
             'file_name': shared.file_name,
             'file_size': _format_size(shared.file_size),
-            'file_url':  request.build_absolute_uri(shared.file.url),
+            'file_url':  file_url,
             'sender':    user.display_name,
             'role':      user.role,
             'time':      shared.uploaded_at.strftime('%H:%M'),
         })
         return Response({
-            'detail':  'File shared.',
-            'file_id': shared.id,
-            'status':  'direct',
+            'detail':    'File shared.',
+            'id':        shared.id,
+            'file_id':   shared.id,
+            'file_name': shared.file_name,
+            'file_size': _format_size(shared.file_size),
+            'file_url':  file_url,
+            'status':    'direct',
         }, status=status.HTTP_201_CREATED)
 
 
@@ -148,9 +164,20 @@ class RejectFileView(APIView):
         shared.status = 'rejected'
         shared.save()
 
+        # Tell the room which specific file was rejected so the uploader's
+        # (and admin's) pending bubble can actually resolve instead of
+        # hanging forever in "pending" state.
+        _push_to_group(f'chat_{shared.room_id}', {
+            'type':    'file_rejected',
+            'id':      shared.id,
+            'sender':  shared.sender.display_name,
+        })
+
         _push_to_group(f'chat_{shared.room_id}', {
             'type':    'system_message',
             'message': f'A file from {shared.sender.display_name} was not approved.',
         })
 
         return Response({'detail': 'File rejected.'})
+
+

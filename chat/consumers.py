@@ -257,12 +257,26 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({
             'type':      'file',
             'id':        f"file_{event['id']}",
+            'file_id':   event['id'],
             'file_name': event['file_name'],
             'file_size': event['file_size'],
             'file_url':  event['file_url'],
             'sender':    event['sender'],
             'role':      event['role'],
+            'status':    'approved',
             'time':      event['time'],
+        }))
+
+    async def file_rejected(self, event):
+        """
+        Tells everyone currently in the room that a specific pending file
+        was rejected, so any locally-held pending bubble for it (the
+        uploader's own optimistic copy, or admin's) can be resolved.
+        """
+        await self.send(text_data=json.dumps({
+            'type':    'file:rejected',
+            'id':      event['id'],
+            'sender':  event['sender'],
         }))
 
     # ── Database helpers ──────────────────────────────────────────────────────
@@ -375,14 +389,21 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 url = 'http://localhost:8000' + settings.MEDIA_URL + f.file.name
             except Exception:
                 url = ''
+
+            # Admins get a real URL even for pending files, so they can
+            # preview/download before approving. Everyone else only gets
+            # a URL once the file is approved/direct — and even then, only
+            # if it's their own pending upload or an approved/direct file
+            # (handled by the queryset filters above already).
+            can_see_url = f.status in ['approved', 'direct'] or role == 'admin'
+
             file_events.append({
                 'type':      'file',
                 'id':        f'file_{f.id}',
                 'file_id':   f.id,
                 'file_name': f.file_name,
                 'file_size': _fmt_size(f.file_size),
-                # pending files have no download URL yet
-                'file_url':  url if f.status in ['approved', 'direct'] else None,
+                'file_url':  url if can_see_url else None,
                 'sender':    f.sender.display_name,
                 'role':      f.sender.role,
                 'status':    f.status,
@@ -436,7 +457,9 @@ class AdminConsumer(AsyncWebsocketConsumer):
             'id':        event['id'],
             'file_name': event['file_name'],
             'file_size': event['file_size'],
+            'file_url':  event.get('file_url'),
             'sender':    event['sender'],
             'room_id':   event['room_id'],
             'room_name': event['room_name'],
         }))
+

@@ -5,39 +5,39 @@ import ChatWebSocket from '../services/websocket'
 import api from '../services/api'
 import useNotificationSound, { SOUND_PROFILES } from '../hooks/useNotificationSound'
 
-// ── Design Tokens ─────────────────────────────────────────────────────────────
+// ── Design Tokens — WhatsApp theme ────────────────────────────────────────────
 const C = {
-  // Primary — used sparingly for key actions only
-  navy:        '#1e3a5f',
-  navyHover:   '#16304f',
-  // Gold — the signature, used on active states, send btn, highlights
-  gold:        '#c9a84c',
-  goldDark:    '#a8873a',
-  goldLight:   '#fdf8ec',
-  goldBorder:  '#edd9a3',
+  // Primary — WhatsApp teal, used for header/brand/active accents
+  navy:        '#075e54',
+  navyHover:   '#064e45',
+  // Green — the signature action color (send button, own bubbles, active states)
+  gold:        '#00a884',
+  goldDark:    '#008a6e',
+  goldLight:   '#e7f8f3',
+  goldBorder:  '#b6e6d8',
   // Backgrounds
-  bg:          '#f5f7fa',
+  bg:          '#f0f2f5',
   sidebarBg:   '#ffffff',
-  chatBg:      '#f0f4f8',
+  chatBg:      '#efeae2',
   // Borders
-  border:      '#e4e9f0',
-  borderLight: '#eef2f7',
+  border:      '#e9edef',
+  borderLight: '#f0f2f5',
   // Text
-  text:        '#1a2332',
-  textMid:     '#4a5568',
-  textSoft:    '#718096',
-  textFaint:   '#a0aec0',
+  text:        '#111b21',
+  textMid:     '#3b4a54',
+  textSoft:    '#667781',
+  textFaint:   '#8696a0',
   // Role colors — lighter, friendlier
-  adminBg:     '#e8f0fb', adminText: '#2a5298',
-  providerBg:  '#fef9ec', providerText: '#92640a',
-  clientBg:    '#edfaf4', clientText:   '#276749',
+  adminBg:     '#e7f8f3', adminText: '#008a6e',
+  providerBg:  '#fef6e0', providerText: '#8a6d00',
+  clientBg:    '#e9f3ff', clientText:   '#2a5298',
   // Status
-  green:       '#38a169',
-  greenLight:  '#edfaf4',
+  green:       '#00a884',
+  greenLight:  '#e7f8f3',
   amber:       '#d69e2e',
-  amberLight:  '#fefcbf',
+  amberLight:  '#fef6e0',
   red:         '#e53e3e',
-  redLight:    '#fff5f5',
+  redLight:    '#fff0ef',
   white:       '#ffffff',
 }
 
@@ -179,8 +179,21 @@ export default function ChatRoom() {
       if (data.type === 'file') {
         if (seenIdsRef.current.has(data.id)) return
         seenIdsRef.current.add(data.id)
-        setMessages(prev => [...prev, data])
+        setMessages(prev => {
+          const idx = prev.findIndex(m => m.type === 'file' && m.file_id === data.file_id)
+          if (idx !== -1) {
+            const updated = [...prev]
+            updated[idx] = { ...updated[idx], ...data }
+            return updated
+          }
+          return [...prev, data]
+        })
         if (soundEnabled && data.sender !== user?.display_name) playSound('message', messageSoundProfile)
+        return
+      }
+      if (data.type === 'file:rejected') {
+        setMessages(prev => prev.filter(m => !(m.type === 'file' && m.file_id === data.id)))
+        setPendingFiles(prev => prev.filter(f => f.id !== data.id))
         return
       }
       if (data.type === 'system') {
@@ -193,14 +206,21 @@ export default function ChatRoom() {
         if (soundEnabled && isAdmin) playSound('pending', pendingSoundProfile)
         return
       }
+      if (data.type === 'file:rejected') {
+        const pid = 'file_pending_' + data.id
+        setMessages(prev => prev.filter(m => m.id !== pid && m.file_id !== data.id))
+        setPendingFiles(prev => prev.filter(f => f.id !== data.id))
+        return
+      }
       if (data.type === 'file:pending') {
         setPendingFiles(prev => prev.find(f => f.id === data.id) ? prev : [...prev, data])
         if (soundEnabled && isAdmin) playSound('pending', pendingSoundProfile)
-        if (isAdmin) {
+        const isMine = data.sender === user?.display_name
+        if (isAdmin || isMine) {
           setMessages(prev => {
             const pid = 'file_pending_' + data.id
             if (prev.find(m => m.id === pid)) return prev
-            return [...prev, { type: 'file', id: pid, file_id: data.id, file_name: data.file_name, file_size: data.file_size, file_url: null, sender: data.sender, status: 'pending', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]
+            return [...prev, { type: 'file', id: pid, file_id: data.id, file_name: data.file_name, file_size: data.file_size, file_url: data.file_url ?? null, sender: data.sender, role: data.role, status: 'pending', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]
           })
         }
       }
@@ -216,9 +236,14 @@ export default function ChatRoom() {
   }
 
   const handleFileUpload = async e => {
-    const file = e.target.files[0]; if (!file || !connected) return
+    const file = e.target.files[0]; if (!file || !activeRoom || !connected) return
     const fd = new FormData(); fd.append('file', file)
-    try { await api.post('/chat/rooms/' + activeRoom.id + '/upload-file/', fd, { headers: { 'Content-Type': 'multipart/form-data' } }) }
+    try {
+      await api.post('/chat/rooms/' + activeRoom.id + '/upload-file/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      // The pending/approved bubble itself arrives via the websocket
+      // ('file' event, status 'pending' or 'approved') — the upload
+      // response only carries {file_id, status}, not enough to render.
+    }
     catch { setError('Failed to upload file.'); setTimeout(() => setError(''), 4000) }
     e.target.value = ''
   }
@@ -289,12 +314,19 @@ export default function ChatRoom() {
     ? [{ value: 'everyone', label: 'Everyone', icon: '🌐' }, { value: 'client', label: 'Client', icon: '👤' }, { value: 'provider', label: 'Provider', icon: '🔧' }]
     : [{ value: 'everyone', label: 'Everyone', icon: '🌐' }, { value: 'admin', label: 'Admin', icon: '🔑' }]
 
-  const allMembers = activeRoom ? [
-    { name: user?.display_name || 'Admin', role: 'admin', online: true, isYou: true },
-    { name: getClientDisplay(activeRoom), role: 'client', online: true },
-    ...(activeRoom.providers || []).map(p => ({ name: p.display_name, role: 'provider', online: false, id: p.id, isProvider: true })),
-    ...(activeRoom.extra_clients || []).map(c => ({ name: c.display_name, role: 'client', online: false, id: c.id, isExtraClient: true })),
-  ] : []
+  const allMembers = activeRoom ? (() => {
+    const clientId = activeRoom.client?.id ?? activeRoom.client
+    const rows = [
+      { name: getClientDisplay(activeRoom), role: 'client', online: true, id: clientId },
+      ...(activeRoom.providers || []).map(p => ({ name: p.display_name, role: 'provider', online: false, id: p.id, isProvider: true })),
+      ...(activeRoom.extra_clients || []).map(c => ({ name: c.display_name, role: 'client', online: false, id: c.id, isExtraClient: true })),
+    ]
+    const meIsListed = rows.some(r => r.id === user?.id)
+    if (!meIsListed) {
+      rows.unshift({ name: user?.display_name || 'You', role: user?.role || 'client', online: true, id: user?.id })
+    }
+    return rows.map(r => r.id === user?.id ? { ...r, isYou: true } : r)
+  })() : []
 
   if (!activeRoom) return (
     <div style={S.loadingScreen}>
@@ -310,7 +342,7 @@ export default function ChatRoom() {
       {/* ═══ LEFT SIDEBAR ═══ */}
       {showSidebar && (
         <aside style={S.sidebar}>
-          {/* Brand header — navy strip at top only */}
+          {/* Brand header — teal strip at top only */}
           <div style={S.sidebarBrand}>
             <div style={S.brandMark}>TJ</div>
             <div>
@@ -358,7 +390,7 @@ export default function ChatRoom() {
                 <div key={room.id} className="tjc-room"
                   style={{ ...S.roomItem, ...(isActive ? S.roomItemActive : {}) }}
                   onClick={() => { setActiveRoom(room); setUnreadCounts(prev => ({ ...prev, [room.id]: 0 })) }}>
-                  <div style={{ ...S.roomAv, background: isActive ? C.gold : avatarBg(room.name), color: isActive ? C.navy : '#fff' }}>
+                  <div style={{ ...S.roomAv, background: isActive ? C.gold : avatarBg(room.name), color: '#fff' }}>
                     {room.name?.[0]?.toUpperCase()}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -372,23 +404,6 @@ export default function ChatRoom() {
                 </div>
               )
             })}
-          </div>
-
-          {/* DMs */}
-          <div style={S.secLabel}>DIRECT MESSAGES</div>
-          <div style={{ padding: '0 8px 8px' }}>
-            {allMembers.filter(m => !m.isYou).map((m, i) => (
-              <div key={i} className="tjc-room" style={S.dmItem}>
-                <div style={{ position: 'relative' }}>
-                  <div style={{ ...S.dmAv, background: avatarBg(m.name) }}>{m.name?.[0]?.toUpperCase()}</div>
-                  <span style={{ ...S.onlineDot, background: m.online ? C.green : C.textFaint }} />
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={S.dmName}>{m.name}</div>
-                  <div style={{ ...S.dmStatus, color: m.online ? C.green : C.textFaint }}>{m.online ? '● Online' : '● Offline'}</div>
-                </div>
-              </div>
-            ))}
           </div>
 
           <div style={{ flex: 1 }} />
@@ -453,7 +468,7 @@ export default function ChatRoom() {
           {messages.map((msg, idx) => {
             if (msg.type === 'system') return (
               <div key={msg.id || idx} style={S.sysMsg}>
-                <div style={S.sysLine} /><span style={S.sysText}>{msg.message}</span><div style={S.sysLine} />
+                <span style={S.sysText}>{msg.message}</span>
               </div>
             )
 
@@ -505,17 +520,19 @@ export default function ChatRoom() {
               <div key={msg.id || idx} style={{ ...S.msgRow, justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
                 {!isMe && <div style={{ ...S.msgAv, background: avatarBg(msg.sender) }}>{msg.sender?.[0]?.toUpperCase()}</div>}
                 <div style={{ maxWidth: '62%' }}>
-                  <div style={{ ...S.msgMeta, justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
-                    <span style={S.msgSender}>{msg.sender}</span>
-                    <span style={{ ...S.rolePill, background: roleStyle(sRole).bg, color: roleStyle(sRole).text }}>{sRole}</span>
-                  </div>
+                  {!isMe && (
+                    <div style={{ ...S.msgMeta, justifyContent: 'flex-start' }}>
+                      <span style={S.msgSender}>{msg.sender}</span>
+                      <span style={{ ...S.rolePill, background: roleStyle(sRole).bg, color: roleStyle(sRole).text }}>{sRole}</span>
+                    </div>
+                  )}
                   <div style={{
                     ...S.bubble,
                     ...(isMe ? S.bubbleMe : S.bubbleOther),
                     ...(isFlagged ? { background: C.amberLight, border: `1.5px solid ${C.goldBorder}`, boxShadow: 'none' } : {}),
                   }}>
                     {isFlagged && <div style={S.flagTag}>⚠️ Pending approval</div>}
-                    <span style={{ color: isMe && !isFlagged ? '#fff' : C.text }}>{msg.body}</span>
+                    <span style={{ color: C.text }}>{msg.body}</span>
                     {isAdmin && isFlagged && (
                       <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
                         <button className="tjc-approve" style={S.appBtn} onClick={async () => {
@@ -538,7 +555,6 @@ export default function ChatRoom() {
                     {msg.time}{isMe && !isFlagged && <span style={{ color: C.gold, marginLeft: 4 }}>✓✓</span>}
                   </div>
                 </div>
-                {isMe && <div style={{ ...S.msgAv, background: avatarBg(msg.sender) }}>{msg.sender?.[0]?.toUpperCase()}</div>}
               </div>
             )
           })}
@@ -569,7 +585,7 @@ export default function ChatRoom() {
               <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
             </button>
             <textarea style={S.textarea}
-              placeholder={!connected ? 'Connecting…' : messageTarget === 'client' ? 'Message to client only…' : messageTarget === 'provider' ? 'Message to provider only…' : messageTarget === 'admin' ? 'Private message to admin…' : 'Type your message…'}
+              placeholder={!connected ? 'Connecting…' : messageTarget === 'client' ? 'Message to client only…' : messageTarget === 'provider' ? 'Message to provider only…' : messageTarget === 'admin' ? 'Private message to admin…' : 'Type a message'}
               value={input} onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown} rows={1} disabled={!connected} />
             <button className="tjc-icon" style={S.inputIco}>
@@ -578,7 +594,7 @@ export default function ChatRoom() {
             <button className="tjc-send"
               style={{ ...S.sendBtn, ...(!(input.trim() && connected) ? S.sendOff : {}) }}
               onClick={sendMessage} disabled={!input.trim() || !connected}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
             </button>
           </div>
           {(isAdmin || isProvider) && activeRoom.status !== 'closed' && (
@@ -684,7 +700,7 @@ export default function ChatRoom() {
                           <div style={S.togLbl}>{item.label}</div>
                           <div style={S.togSub}>{item.sub}</div>
                         </div>
-                        <div style={{ ...S.tog, background: item.val ? C.navy : C.border }}
+                        <div style={{ ...S.tog, background: item.val ? C.gold : C.border }}
                           onClick={() => { const v = !item.val; item.set(v); updateSetting(item.key, v) }}>
                           <div style={{ ...S.togKnob, transform: item.val ? 'translateX(18px)' : 'translateX(2px)' }} />
                         </div>
@@ -708,6 +724,16 @@ export default function ChatRoom() {
                         <div style={{ fontSize: 12, color: C.textMid, fontStyle: 'italic', marginBottom: 7 }}>
                           {item._type === 'msg' ? `"${item.body || item.text}"` : `${isImageFile(item.file_name) ? '🖼️' : '📄'} ${item.file_name}`}
                         </div>
+                        {item._type === 'file' && (item.file_url || item.file) && (
+                          <div style={{ marginBottom: 8 }}>
+                            {isImageFile(item.file_name) && (
+                              <img src={item.file_url || item.file} alt={item.file_name} style={{ width: '100%', borderRadius: 6, marginBottom: 6, maxHeight: 140, objectFit: 'cover' }} />
+                            )}
+                            <a href={item.file_url || item.file} target="_blank" rel="noreferrer" style={{ ...S.dlLink, marginTop: 0, fontSize: 11 }}>
+                              👁 Preview / Download before deciding
+                            </a>
+                          </div>
+                        )}
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button className="tjc-approve" style={S.appBtn} onClick={async () => {
                             try {
@@ -768,13 +794,13 @@ export default function ChatRoom() {
                 <div style={{ ...S.rSecHdr, marginTop: 16 }}>NOTIFICATION SOUNDS</div>
                 <div style={S.togRow}>
                   <div style={{ flex: 1 }}><div style={S.togLbl}>Sound alerts</div><div style={S.togSub}>Play on new messages</div></div>
-                  <div style={{ ...S.tog, background: soundEnabled ? C.navy : C.border }} onClick={toggleSound}>
+                  <div style={{ ...S.tog, background: soundEnabled ? C.gold : C.border }} onClick={toggleSound}>
                     <div style={{ ...S.togKnob, transform: soundEnabled ? 'translateX(18px)' : 'translateX(2px)' }} />
                   </div>
                 </div>
                 {soundEnabled && SOUND_PROFILES.map(profile => (
                   <div key={profile.id}
-                    style={{ ...S.soundOpt, ...(messageSoundProfile === profile.id ? { background: C.adminBg, border: `1.5px solid ${C.navy}` } : {}) }}
+                    style={{ ...S.soundOpt, ...(messageSoundProfile === profile.id ? { background: C.adminBg, border: `1.5px solid ${C.gold}` } : {}) }}
                     onClick={() => changeMessageSoundProfile(profile.id)}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: messageSoundProfile === profile.id ? C.navy : C.textMid }}>{profile.label}</div>
                     <button style={S.prevBtn} onClick={e => { e.stopPropagation(); playSound('message', profile.id) }}>▶</button>
@@ -791,148 +817,152 @@ export default function ChatRoom() {
 
 const css = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-thumb { background: #d1d9e6; border-radius: 4px; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-thumb { background: #cfd8dc; border-radius: 6px; }
   textarea, input, select, button { font-family: inherit; }
   textarea:focus, input:focus, select:focus { outline: none; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes fadeUp { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
   .tjc-newroom { transition: all 0.15s; }
-  .tjc-newroom:hover { background: #a8873a !important; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(201,168,76,0.4) !important; }
-  .tjc-room:hover { background: #f0f5fb !important; }
-  .tjc-icon:hover { background: #f0f5fb !important; color: #1e3a5f !important; }
-  .tjc-send:hover:not(:disabled) { background: #c9a84c !important; transform: scale(1.06); box-shadow: 0 4px 14px rgba(201,168,76,0.5) !important; }
-  .tjc-target:hover { border-color: #1e3a5f !important; color: #1e3a5f !important; }
+  .tjc-newroom:hover { background: #008a6e !important; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,168,132,0.35) !important; }
+  .tjc-room:hover { background: #f5f6f6 !important; }
+  .tjc-icon:hover { background: #f0f2f5 !important; color: #075e54 !important; }
+  .tjc-send:hover:not(:disabled) { background: #008a6e !important; transform: scale(1.06); box-shadow: 0 4px 14px rgba(0,168,132,0.45) !important; }
+  .tjc-target:hover { border-color: #00a884 !important; color: #00a884 !important; }
   .tjc-approve:hover { background: #c3e6cb !important; }
   .tjc-reject:hover  { background: #f5c6cb !important; }
   .tjc-action:hover  { background: #f5f8fd !important; }
   .tjc-signout:hover { color: #e53e3e !important; border-color: #feb2b2 !important; background: #fff5f5 !important; }
-  .tjc-tab:hover { color: #1e3a5f !important; }
+  .tjc-tab:hover { color: #075e54 !important; }
 `
 
 const S = {
-  app:          { display: 'flex', height: '100vh', background: '#f5f7fa', overflow: 'hidden', fontFamily: "'Inter','Segoe UI',system-ui,sans-serif" },
+  app:          { display: 'flex', height: '100vh', background: '#f0f2f5', overflow: 'hidden', fontFamily: "'Segoe UI',Helvetica,Arial,sans-serif" },
   loadingScreen:{ display: 'flex', flexDirection: 'column', height: '100vh', alignItems: 'center', justifyContent: 'center', gap: 12 },
-  spinner:      { width: 32, height: 32, border: '3px solid #e4e9f0', borderTopColor: '#1e3a5f', borderRadius: '50%', animation: 'spin 0.8s linear infinite' },
-  loadingText:  { fontSize: 14, color: '#718096' },
+  spinner:      { width: 32, height: 32, border: '3px solid #e9edef', borderTopColor: '#00a884', borderRadius: '50%', animation: 'spin 0.8s linear infinite' },
+  loadingText:  { fontSize: 14, color: '#667781' },
 
-  // ── Sidebar (white + navy top strip) ──────────────────────────────────────
-  sidebar:      { width: 272, background: '#ffffff', borderRight: '1px solid #e4e9f0', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: 'auto' },
-  sidebarBrand: { display: 'flex', alignItems: 'center', gap: 10, padding: '14px 14px 12px', background: '#1e3a5f' },
-  brandMark:    { width: 36, height: 36, borderRadius: 10, background: '#c9a84c', color: '#1e3a5f', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0, letterSpacing: '-0.5px' },
-  brandName:    { fontSize: 13, fontWeight: 700, color: '#ffffff' },
-  brandTagline: { fontSize: 9, color: 'rgba(255,255,255,0.55)', marginTop: 2, letterSpacing: '0.03em' },
-  userCard:     { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', margin: '10px 10px 4px', borderRadius: 10, background: '#f5f7fa', border: '1px solid #e4e9f0' },
+  // ── Sidebar (white + teal top strip) ──────────────────────────────────────
+  sidebar:      { width: 280, background: '#ffffff', borderRight: '1px solid #e9edef', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: 'auto' },
+  sidebarBrand: { display: 'flex', alignItems: 'center', gap: 10, padding: '16px 16px 14px', background: '#075e54' },
+  brandMark:    { width: 36, height: 36, borderRadius: '50%', background: '#00a884', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0, letterSpacing: '-0.5px' },
+  brandName:    { fontSize: 14, fontWeight: 600, color: '#ffffff' },
+  brandTagline: { fontSize: 9, color: 'rgba(255,255,255,0.65)', marginTop: 2, letterSpacing: '0.03em' },
+  userCard:     { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', margin: '10px 10px 4px', borderRadius: 10, background: '#f7f8fa', border: '1px solid #e9edef' },
   userAv:       { width: 32, height: 32, borderRadius: '50%', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, flexShrink: 0 },
-  userName:     { fontSize: 13, fontWeight: 600, color: '#1a2332' },
+  userName:     { fontSize: 13, fontWeight: 600, color: '#111b21' },
   rolePill:     { display: 'inline-block', fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, marginTop: 2, textTransform: 'capitalize' },
   searchWrap:   { margin: '6px 10px 4px', position: 'relative' },
   searchIco:    { position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' },
-  searchInput:  { width: '100%', padding: '7px 10px 7px 28px', borderRadius: 8, border: '1px solid #e4e9f0', fontSize: 12, color: '#1a2332', background: '#f5f7fa' },
-  newRoomBtn:   { width: '100%', padding: '8px', border: 'none', borderRadius: 8, background: '#c9a84c', color: '#1e3a5f', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, boxShadow: '0 2px 8px rgba(201,168,76,0.3)' },
-  secLabel:     { fontSize: 9, fontWeight: 700, color: '#a0aec0', letterSpacing: '0.1em', padding: '10px 14px 3px' },
+  searchInput:  { width: '100%', padding: '8px 10px 8px 28px', borderRadius: 20, border: '1px solid #e9edef', fontSize: 13, color: '#111b21', background: '#f0f2f5' },
+  newRoomBtn:   { width: '100%', padding: '9px', border: 'none', borderRadius: 22, background: '#00a884', color: '#ffffff', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, boxShadow: '0 2px 8px rgba(0,168,132,0.28)' },
+  secLabel:     { fontSize: 9, fontWeight: 700, color: '#8696a0', letterSpacing: '0.1em', padding: '10px 14px 3px' },
   roomList:     { padding: '0 6px 4px' },
   roomItem:     { display: 'flex', alignItems: 'center', gap: 9, padding: '8px 8px', borderRadius: 8, cursor: 'pointer', marginBottom: 1, transition: 'background 0.12s' },
-  roomItemActive: { background: '#eef4fb', borderLeft: '3px solid #c9a84c', paddingLeft: 5 },
-  roomAv:       { width: 36, height: 36, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 },
+  roomItemActive: { background: '#e7f8f3', borderLeft: '3px solid #00a884', paddingLeft: 5 },
+  roomAv:       { width: 40, height: 40, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, flexShrink: 0 },
   roomName:     { fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  roomMeta:     { display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#a0aec0', marginTop: 2 },
+  roomMeta:     { display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#8696a0', marginTop: 2 },
   dot:          { width: 6, height: 6, borderRadius: '50%', flexShrink: 0 },
-  badge:        { background: '#e53e3e', color: '#fff', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 20, flexShrink: 0 },
+  badge:        { background: '#00a884', color: '#fff', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 20, flexShrink: 0 },
   dmItem:       { display: 'flex', alignItems: 'center', gap: 9, padding: '7px 8px', borderRadius: 8, cursor: 'pointer', marginBottom: 1, transition: 'background 0.12s' },
   dmAv:         { width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700 },
-  dmName:       { fontSize: 12, fontWeight: 600, color: '#1a2332' },
+  dmName:       { fontSize: 12, fontWeight: 600, color: '#111b21' },
   dmStatus:     { fontSize: 10, marginTop: 1, fontWeight: 500 },
   onlineDot:    { position: 'absolute', bottom: 1, right: 1, width: 8, height: 8, borderRadius: '50%', border: '2px solid #fff' },
-  signOutBtn:   { margin: '8px 10px 14px', padding: '8px 12px', border: '1px solid #e4e9f0', borderRadius: 8, background: 'none', color: '#a0aec0', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.15s' },
+  signOutBtn:   { margin: '8px 10px 14px', padding: '8px 12px', border: '1px solid #e9edef', borderRadius: 8, background: 'none', color: '#8696a0', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.15s' },
 
   // ── Main ──────────────────────────────────────────────────────────────────
-  main:         { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, background: '#ffffff' },
-  header:       { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 18px', background: '#ffffff', borderBottom: '1px solid #eef2f7' },
+  main:         { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, background: '#efeae2' },
+  header:       { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 18px', background: '#f0f2f5', borderBottom: '1px solid #e9edef' },
   headerL:      { display: 'flex', alignItems: 'center', gap: 11 },
   headerR:      { display: 'flex', alignItems: 'center', gap: 3 },
-  iconBtn:      { background: 'none', border: 'none', borderRadius: 7, padding: '7px', cursor: 'pointer', color: '#718096', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s', position: 'relative' },
-  roomHeaderAv: { width: 38, height: 38, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 700, flexShrink: 0 },
-  headerRoomName: { fontSize: 15, fontWeight: 700, color: '#1a2332', letterSpacing: '-0.2px' },
-  headerRoomMeta: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#718096', marginTop: 2 },
-  sep:          { color: '#d1d9e6' },
+  iconBtn:      { background: 'none', border: 'none', borderRadius: '50%', padding: '8px', cursor: 'pointer', color: '#54656f', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s', position: 'relative' },
+  roomHeaderAv: { width: 40, height: 40, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 700, flexShrink: 0 },
+  headerRoomName: { fontSize: 15, fontWeight: 600, color: '#111b21', letterSpacing: '-0.1px' },
+  headerRoomMeta: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#667781', marginTop: 2 },
+  sep:          { color: '#c9cfd3' },
   headerDot:    { position: 'absolute', top: 4, right: 4, width: 7, height: 7, borderRadius: '50%', background: '#e53e3e' },
-  errorBar:     { background: '#fff5f5', color: '#e53e3e', padding: '7px 18px', fontSize: 13, borderBottom: '1px solid #feb2b2' },
+  errorBar:     { background: '#fff0ef', color: '#e53e3e', padding: '7px 18px', fontSize: 13, borderBottom: '1px solid #feb2b2' },
 
-  messages:     { flex: 1, overflowY: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 2, background: '#f8fafd' },
+  messages:     {
+    flex: 1, overflowY: 'auto', padding: '16px 22px', display: 'flex', flexDirection: 'column', gap: 2,
+    background: '#efeae2',
+    backgroundImage: "url(\"data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23e0dbd0' fill-opacity='0.4'%3E%3Ccircle cx='10' cy='10' r='1.4'/%3E%3Ccircle cx='50' cy='30' r='1.4'/%3E%3Ccircle cx='90' cy='10' r='1.4'/%3E%3Ccircle cx='30' cy='70' r='1.4'/%3E%3Ccircle cx='70' cy='90' r='1.4'/%3E%3C/g%3E%3C/svg%3E\")",
+  },
   emptyChat:    { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 },
   emptyIcon:    { fontSize: 44, marginBottom: 6 },
-  emptyTitle:   { fontSize: 15, fontWeight: 700, color: '#1a2332' },
-  emptySub:     { fontSize: 13, color: '#a0aec0' },
-  sysMsg:       { display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'center', maxWidth: '80%', margin: '6px 0' },
-  sysLine:      { flex: 1, height: 1, background: '#eef2f7', minWidth: 20 },
-  sysText:      { fontSize: 11, color: '#a0aec0', whiteSpace: 'nowrap', padding: '0 4px' },
+  emptyTitle:   { fontSize: 15, fontWeight: 700, color: '#111b21' },
+  emptySub:     { fontSize: 13, color: '#8696a0' },
+  sysMsg:       { alignSelf: 'center', maxWidth: '80%', margin: '8px 0', background: '#fff3c4', borderRadius: 7, padding: '5px 12px', boxShadow: '0 1px 1px rgba(0,0,0,0.08)' },
+  sysText:      { fontSize: 12, color: '#5b5228', textAlign: 'center' },
 
   msgRow:       { display: 'flex', alignItems: 'flex-end', gap: 8, animation: 'fadeUp 0.15s ease', marginBottom: 10 },
-  msgAv:        { width: 32, height: 32, borderRadius: '50%', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 },
+  msgAv:        { width: 30, height: 30, borderRadius: '50%', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 },
   msgMeta:      { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 },
-  msgSender:    { fontSize: 12, fontWeight: 600, color: '#4a5568' },
-  bubble:       { padding: '10px 14px', borderRadius: 14, fontSize: 14, lineHeight: 1.55, wordBreak: 'break-word' },
-  bubbleMe:     { background: '#1e3a5f', borderBottomRightRadius: 4, boxShadow: '0 2px 8px rgba(30,58,95,0.18)' },
-  bubbleOther:  { background: '#ffffff', borderBottomLeftRadius: 4, border: '1px solid #eef2f7', boxShadow: '0 1px 3px rgba(30,58,95,0.06)' },
+  msgSender:    { fontSize: 12, fontWeight: 700, color: '#00a884' },
+  bubble:       { padding: '7px 9px 8px', borderRadius: 8, fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word', position: 'relative' },
+  bubbleMe:     { background: '#d9fdd3', borderTopRightRadius: 0, boxShadow: '0 1px 1px rgba(0,0,0,0.08)' },
+  bubbleOther:  { background: '#ffffff', borderTopLeftRadius: 0, boxShadow: '0 1px 1px rgba(0,0,0,0.08)' },
   flagTag:      { fontSize: 11, color: '#d69e2e', fontWeight: 600, marginBottom: 5 },
   visPill:      { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 20, marginTop: 4 },
-  msgTime:      { fontSize: 10, color: '#c8d3e0', marginTop: 3, paddingLeft: 2 },
+  msgTime:      { fontSize: 10, color: '#8696a0', marginTop: 3, paddingLeft: 2 },
 
-  fileBubble:   { background: '#ffffff', border: '1px solid #eef2f7', borderRadius: 12, padding: '11px 13px', boxShadow: '0 1px 3px rgba(30,58,95,0.06)' },
+  fileBubble:   { background: '#ffffff', borderRadius: 8, padding: '11px 13px', boxShadow: '0 1px 1px rgba(0,0,0,0.08)' },
   pendingTag:   { fontSize: 11, color: '#d69e2e', fontWeight: 600, marginBottom: 7 },
-  fileName:     { fontSize: 13, fontWeight: 600, color: '#1a2332', wordBreak: 'break-all' },
-  fileMeta:     { fontSize: 11, color: '#a0aec0', marginTop: 1 },
-  dlLink:       { display: 'inline-block', marginTop: 8, fontSize: 12, color: '#1e3a5f', fontWeight: 600, textDecoration: 'none' },
+  fileName:     { fontSize: 13, fontWeight: 600, color: '#111b21', wordBreak: 'break-all' },
+  fileMeta:     { fontSize: 11, color: '#8696a0', marginTop: 1 },
+  dlLink:       { display: 'inline-block', marginTop: 8, fontSize: 12, color: '#00a884', fontWeight: 600, textDecoration: 'none' },
 
-  inviteBar:    { display: 'flex', gap: 8, padding: '8px 18px', borderTop: '1px solid #eef2f7', background: '#fff' },
-  inviteInput:  { flex: 1, padding: '7px 11px', borderRadius: 8, border: '1.5px solid #e4e9f0', fontSize: 13, color: '#1a2332' },
-  inviteBtn:    { padding: '7px 15px', borderRadius: 8, border: 'none', background: '#1e3a5f', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' },
+  inviteBar:    { display: 'flex', gap: 8, padding: '8px 18px', borderTop: '1px solid #e9edef', background: '#f0f2f5' },
+  inviteInput:  { flex: 1, padding: '7px 11px', borderRadius: 20, border: '1.5px solid #e9edef', fontSize: 13, color: '#111b21' },
+  inviteBtn:    { padding: '7px 15px', borderRadius: 20, border: 'none', background: '#00a884', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' },
 
-  inputArea:    { padding: '10px 14px 12px', background: '#ffffff', borderTop: '1px solid #eef2f7' },
-  inputBox:     { display: 'flex', alignItems: 'center', gap: 6, background: '#f5f7fa', borderRadius: 12, padding: '5px 8px', border: '1.5px solid #e4e9f0' },
-  inputIco:     { background: 'none', border: 'none', padding: '6px', cursor: 'pointer', color: '#a0aec0', display: 'flex', alignItems: 'center', borderRadius: 7, flexShrink: 0, transition: 'color 0.15s' },
-  textarea:     { flex: 1, background: 'none', border: 'none', fontSize: 14, color: '#1a2332', resize: 'none', lineHeight: 1.5, padding: '4px 0' },
-  sendBtn:      { width: 36, height: 36, borderRadius: '50%', background: '#1e3a5f', border: 'none', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s', boxShadow: '0 2px 8px rgba(30,58,95,0.25)' },
-  sendOff:      { background: '#e4e9f0', boxShadow: 'none', cursor: 'not-allowed' },
+  inputArea:    { padding: '10px 14px 12px', background: '#f0f2f5', borderTop: '1px solid #e9edef' },
+  inputBox:     { display: 'flex', alignItems: 'center', gap: 6, background: '#ffffff', borderRadius: 24, padding: '5px 8px' },
+  inputIco:     { background: 'none', border: 'none', padding: '6px', cursor: 'pointer', color: '#8696a0', display: 'flex', alignItems: 'center', borderRadius: '50%', flexShrink: 0, transition: 'color 0.15s' },
+  textarea:     { flex: 1, background: 'none', border: 'none', fontSize: 14, color: '#111b21', resize: 'none', lineHeight: 1.5, padding: '8px 0' },
+  sendBtn:      { width: 38, height: 38, borderRadius: '50%', background: '#00a884', border: 'none', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s', boxShadow: '0 2px 8px rgba(0,168,132,0.28)' },
+  sendOff:      { background: '#c6cdd1', boxShadow: 'none', cursor: 'not-allowed' },
   targetRow:    { display: 'flex', alignItems: 'center', gap: 5, marginTop: 8, flexWrap: 'wrap' },
-  targetLbl:    { fontSize: 11, color: '#a0aec0', fontWeight: 600 },
-  targetBtn:    { fontSize: 11, padding: '4px 11px', borderRadius: 20, border: '1.5px solid #e4e9f0', cursor: 'pointer', background: '#fff', color: '#718096', transition: 'all 0.15s', fontFamily: 'inherit' },
-  targetOn:     { background: '#1e3a5f', color: '#fff', borderColor: '#1e3a5f', fontWeight: 600 },
+  targetLbl:    { fontSize: 11, color: '#8696a0', fontWeight: 600 },
+  targetBtn:    { fontSize: 11, padding: '4px 11px', borderRadius: 20, border: '1.5px solid #e9edef', cursor: 'pointer', background: '#fff', color: '#54656f', transition: 'all 0.15s', fontFamily: 'inherit' },
+  targetOn:     { background: '#00a884', color: '#fff', borderColor: '#00a884', fontWeight: 600 },
 
   appBtn:       { flex: 1, padding: '5px 8px', border: '1px solid #9ae6b4', borderRadius: 6, background: '#f0fff4', color: '#276749', fontSize: 11, fontWeight: 600, cursor: 'pointer', transition: 'background 0.15s', fontFamily: 'inherit' },
   rejBtn:       { flex: 1, padding: '5px 8px', border: '1px solid #feb2b2', borderRadius: 6, background: '#fff5f5', color: '#e53e3e', fontSize: 11, fontWeight: 600, cursor: 'pointer', transition: 'background 0.15s', fontFamily: 'inherit' },
 
   // ── Right panel ───────────────────────────────────────────────────────────
-  rightPanel:   { width: 272, background: '#ffffff', borderLeft: '1px solid #eef2f7', display: 'flex', flexDirection: 'column', flexShrink: 0 },
-  tabs:         { display: 'flex', borderBottom: '1px solid #eef2f7', padding: '0 14px' },
-  tab:          { flex: 1, padding: '12px 0', fontSize: 13, fontWeight: 500, color: '#a0aec0', background: 'none', border: 'none', cursor: 'pointer', borderBottom: '2px solid transparent', transition: 'all 0.15s', marginBottom: -1, fontFamily: 'inherit' },
-  tabOn:        { color: '#1e3a5f', borderBottomColor: '#c9a84c', fontWeight: 700 },
+  rightPanel:   { width: 280, background: '#ffffff', borderLeft: '1px solid #e9edef', display: 'flex', flexDirection: 'column', flexShrink: 0 },
+  tabs:         { display: 'flex', borderBottom: '1px solid #e9edef', padding: '0 14px' },
+  tab:          { flex: 1, padding: '12px 0', fontSize: 13, fontWeight: 500, color: '#8696a0', background: 'none', border: 'none', cursor: 'pointer', borderBottom: '3px solid transparent', transition: 'all 0.15s', marginBottom: -1, fontFamily: 'inherit' },
+  tabOn:        { color: '#075e54', borderBottomColor: '#00a884', fontWeight: 700 },
 
-  rSec:         { padding: '12px 14px', borderBottom: '1px solid #eef2f7' },
-  rSecHdr:      { fontSize: 10, fontWeight: 700, color: '#a0aec0', letterSpacing: '0.07em', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
-  addBtn:       { fontSize: 12, fontWeight: 600, color: '#1e3a5f', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' },
+  rSec:         { padding: '12px 14px', borderBottom: '1px solid #e9edef' },
+  rSecHdr:      { fontSize: 10, fontWeight: 700, color: '#8696a0', letterSpacing: '0.07em', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
+  addBtn:       { fontSize: 12, fontWeight: 600, color: '#00a884', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' },
   memberRow:    { display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 },
   memberAv:     { width: 32, height: 32, borderRadius: '50%', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 },
-  memberName:   { fontSize: 13, fontWeight: 600, color: '#1a2332' },
+  memberName:   { fontSize: 13, fontWeight: 600, color: '#111b21' },
   removeBtn:    { background: 'none', border: '1px solid #feb2b2', borderRadius: 5, color: '#e53e3e', fontSize: 10, cursor: 'pointer', padding: '2px 6px', flexShrink: 0, marginLeft: 'auto', fontFamily: 'inherit' },
 
-  actionRow:    { display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid #eef2f7', transition: 'background 0.12s', cursor: 'pointer' },
-  actionIco:    { width: 30, height: 30, borderRadius: 7, background: '#eef4fb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  actionLbl:    { flex: 1, fontSize: 13, fontWeight: 500, color: '#4a5568' },
+  actionRow:    { display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid #e9edef', transition: 'background 0.12s', cursor: 'pointer' },
+  actionIco:    { width: 30, height: 30, borderRadius: 7, background: '#e7f8f3', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  actionLbl:    { flex: 1, fontSize: 13, fontWeight: 500, color: '#3b4a54' },
 
   togRow:       { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  togLbl:       { fontSize: 12, fontWeight: 500, color: '#4a5568' },
-  togSub:       { fontSize: 10, color: '#a0aec0', marginTop: 1 },
+  togLbl:       { fontSize: 12, fontWeight: 500, color: '#3b4a54' },
+  togSub:       { fontSize: 10, color: '#8696a0', marginTop: 1 },
   tog:          { width: 38, height: 20, borderRadius: 20, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0 },
   togKnob:      { position: 'absolute', top: 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'transform 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' },
 
-  sel:          { width: '100%', padding: '7px 9px', borderRadius: 7, border: '1.5px solid #e4e9f0', fontSize: 12, color: '#1a2332', background: '#fff', cursor: 'pointer', marginBottom: 6, fontFamily: 'inherit' },
-  priBtn:       { width: '100%', padding: '8px', border: 'none', borderRadius: 7, background: '#1e3a5f', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 4, fontFamily: 'inherit' },
+  sel:          { width: '100%', padding: '7px 9px', borderRadius: 7, border: '1.5px solid #e9edef', fontSize: 12, color: '#111b21', background: '#fff', cursor: 'pointer', marginBottom: 6, fontFamily: 'inherit' },
+  priBtn:       { width: '100%', padding: '8px', border: 'none', borderRadius: 20, background: '#00a884', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 4, fontFamily: 'inherit' },
 
   soundOpt:     { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', borderRadius: 7, marginBottom: 3, cursor: 'pointer', border: '1.5px solid transparent', transition: 'all 0.15s' },
-  prevBtn:      { background: 'none', border: '1px solid #1e3a5f', borderRadius: 5, padding: '2px 7px', fontSize: 10, cursor: 'pointer', color: '#1e3a5f', flexShrink: 0, fontFamily: 'inherit' },
+  prevBtn:      { background: 'none', border: '1px solid #00a884', borderRadius: 5, padding: '2px 7px', fontSize: 10, cursor: 'pointer', color: '#00a884', flexShrink: 0, fontFamily: 'inherit' },
 
-  pendCard:     { background: '#fefcf0', border: '1px solid #edd9a3', borderRadius: 9, padding: '9px 11px', marginBottom: 7 },
-  closeRoomBtn: { width: '100%', padding: '8px', border: '1px solid #feb2b2', borderRadius: 7, background: '#fff5f5', color: '#e53e3e', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'inherit' },
+  pendCard:     { background: '#fef6e0', border: '1px solid #f0dca0', borderRadius: 9, padding: '9px 11px', marginBottom: 7 },
+  closeRoomBtn: { width: '100%', padding: '8px', border: '1px solid #feb2b2', borderRadius: 20, background: '#fff5f5', color: '#e53e3e', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'inherit' },
 }
+
