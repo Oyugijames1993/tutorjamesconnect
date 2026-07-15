@@ -1,8 +1,19 @@
 import json
+from collections import defaultdict
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from .models import ChatRoom, Message, SharedFile
 from .moderation import moderate_message, ACTION_SEND, ACTION_HOLD, ACTION_BLOCK
+
+# ── In-memory presence tracking ───────────────────────────────────────────────
+# room_id -> { user_id: number_of_open_sockets }
+# A counter (not a plain set) so a user with the room open in two tabs doesn't
+# get marked offline when just one of those tabs closes.
+# NOTE: this lives in process memory. Fine for a single Daphne process (local
+# dev / a single server). If you ever run multiple worker processes or
+# machines, this needs to move to Redis (or your channel layer's backing
+# store) so all processes see the same presence state.
+ROOM_ONLINE_COUNTS = defaultdict(lambda: defaultdict(int))
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
@@ -29,9 +40,27 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.room_group, self.channel_name)
         await self.accept()
 
+        # ── Presence: mark this user online in this room ──────────────────────
+        counts = ROOM_ONLINE_COUNTS[str(self.room_id)]
+        was_offline = counts[self.user.id] == 0
+        counts[self.user.id] += 1
+
         messages = await self.get_messages()
         for msg in messages:
             await self.send(text_data=json.dumps(msg))
+
+        # Tell the newly-connected client who's currently online
+        online_ids = [uid for uid, c in counts.items() if c > 0]
+        await self.send(text_data=json.dumps({
+            'type':            'presence_snapshot',
+            'online_user_ids': online_ids,
+        }))
+
+        if was_offline:
+            await self.channel_layer.group_send(
+                self.room_group,
+                {'type': 'presence_update', 'user_id': self.user.id, 'online': True}
+            )
 
         await self.channel_layer.group_send(
             self.room_group,
@@ -44,6 +73,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.room_group, self.channel_name)
+
+        counts = ROOM_ONLINE_COUNTS[str(self.room_id)]
+        counts[self.user.id] = max(0, counts[self.user.id] - 1)
+        if counts[self.user.id] == 0:
+            await self.channel_layer.group_send(
+                self.room_group,
+                {'type': 'presence_update', 'user_id': self.user.id, 'online': False}
+            )
+
 
     async def receive(self, text_data):
         data = json.loads(text_data)
@@ -253,6 +291,45 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'time':   event['time'],
         }))
 
+    async def presence_update(self, event):
+        await self.send(text_data=json.dumps({
+            'type':    'presence',
+            'user_id': event['user_id'],
+            'online':  event['online'],
+        }))
+
+    async def pending_file_room(self, event):
+        """
+        A file was just uploaded and needs approval. Only the uploader
+        (so their own bubble shows 'pending' immediately) and any admin
+        currently viewing this room should see it. Everyone else ignores it.
+        """
+        role     = self.user.role
+        is_admin = role == 'admin'
+        is_owner = event.get('sender_id') == self.user.id
+
+        if not (is_admin or is_owner):
+            return
+
+        file_url = None
+        if is_admin or is_owner:
+            # Admin gets a real preview/download link before deciding.
+            # The uploader can also re-check what they just sent.
+            file_url = await self.get_file_url(event['id'])
+
+        await self.send(text_data=json.dumps({
+            'type':      'file',
+            'id':        f"file_pending_{event['id']}",
+            'file_id':   event['id'],
+            'file_name': event['file_name'],
+            'file_size': event['file_size'],
+            'file_url':  file_url,
+            'sender':    event['sender'],
+            'role':      event['role'],
+            'status':    'pending',
+            'time':      event['time'],
+        }))
+
     async def file_approved(self, event):
         await self.send(text_data=json.dumps({
             'type':      'file',
@@ -269,14 +346,19 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def file_rejected(self, event):
         """
-        Tells everyone currently in the room that a specific pending file
-        was rejected, so any locally-held pending bubble for it (the
-        uploader's own optimistic copy, or admin's) can be resolved.
+        Lets the uploader's (and admin's) pending bubble resolve/disappear
+        instead of hanging in 'Awaiting approval' forever.
         """
+        role     = self.user.role
+        is_admin = role == 'admin'
+        is_owner = event.get('sender_id') == self.user.id
+
+        if not (is_admin or is_owner):
+            return
+
         await self.send(text_data=json.dumps({
-            'type':    'file:rejected',
-            'id':      event['id'],
-            'sender':  event['sender'],
+            'type': 'file:rejected',
+            'id':   event['id'],
         }))
 
     # ── Database helpers ──────────────────────────────────────────────────────
@@ -299,6 +381,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
         try:
             return ChatRoom.objects.get(pk=self.room_id)
         except ChatRoom.DoesNotExist:
+            return None
+
+    @database_sync_to_async
+    def get_file_url(self, file_id):
+        from django.conf import settings
+        try:
+            f = SharedFile.objects.get(pk=file_id)
+            return 'http://localhost:8000' + settings.MEDIA_URL + f.file.name
+        except SharedFile.DoesNotExist:
             return None
 
     @database_sync_to_async
@@ -361,24 +452,20 @@ class ChatConsumer(AsyncWebsocketConsumer):
         ]
 
         if role == 'admin':
+            # Admin sees every file in the room, pending included.
             files = list(
                 room.files.filter(status__in=['approved', 'direct', 'pending'])
                 .select_related('sender')
                 .order_by('uploaded_at')[:20]
             )
-        elif role == 'provider':
-            # Provider sees approved/direct files + their own pending files
+        else:
+            # Everyone else sees approved/direct files, plus their OWN pending
+            # uploads (so a refresh doesn't make their own pending file vanish).
             files = list(
                 room.files.filter(
                     Q(status__in=['approved', 'direct']) |
                     Q(sender=self.user, status='pending')
                 )
-                .select_related('sender')
-                .order_by('uploaded_at')[:20]
-            )
-        else:
-            files = list(
-                room.files.filter(status__in=['approved', 'direct'])
                 .select_related('sender')
                 .order_by('uploaded_at')[:20]
             )
@@ -390,12 +477,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
             except Exception:
                 url = ''
 
-            # Admins get a real URL even for pending files, so they can
-            # preview/download before approving. Everyone else only gets
-            # a URL once the file is approved/direct — and even then, only
-            # if it's their own pending upload or an approved/direct file
-            # (handled by the queryset filters above already).
-            can_see_url = f.status in ['approved', 'direct'] or role == 'admin'
+            if f.status in ('approved', 'direct'):
+                file_url = url
+            elif role == 'admin' or f.sender_id == self.user.id:
+                # Admin can preview any pending file; the uploader can
+                # re-check their own pending file. No one else gets the URL.
+                file_url = url
+            else:
+                file_url = None
 
             file_events.append({
                 'type':      'file',
@@ -403,7 +492,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'file_id':   f.id,
                 'file_name': f.file_name,
                 'file_size': _fmt_size(f.file_size),
-                'file_url':  url if can_see_url else None,
+                'file_url':  file_url,
                 'sender':    f.sender.display_name,
                 'role':      f.sender.role,
                 'status':    f.status,
@@ -462,4 +551,6 @@ class AdminConsumer(AsyncWebsocketConsumer):
             'room_id':   event['room_id'],
             'room_name': event['room_name'],
         }))
+
+
 

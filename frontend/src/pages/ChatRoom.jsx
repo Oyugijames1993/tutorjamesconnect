@@ -69,6 +69,7 @@ export default function ChatRoom() {
   const [inviteClientMsg, setInviteClientMsg]       = useState('')
   const [invitePhone, setInvitePhone]               = useState('')
   const [unreadCounts, setUnreadCounts]             = useState({})
+  const [onlineUserIds, setOnlineUserIds]           = useState(new Set())
   const [messageTarget, setMessageTarget]           = useState('everyone')
   const [searchQuery, setSearchQuery]               = useState('')
 
@@ -166,9 +167,22 @@ export default function ChatRoom() {
     if (!activeRoom) return
     if (wsRef.current) wsRef.current.disconnect()
     setMessages([]); setConnected(false); seenIdsRef.current = new Set()
+    setOnlineUserIds(new Set())
     const token = localStorage.getItem('access_token')
     wsRef.current = new ChatWebSocket(activeRoom.id, token, data => {
       if (data.type === 'connected') { setConnected(true); return }
+      if (data.type === 'presence_snapshot') {
+        setOnlineUserIds(new Set(data.online_user_ids))
+        return
+      }
+      if (data.type === 'presence') {
+        setOnlineUserIds(prev => {
+          const next = new Set(prev)
+          if (data.online) next.add(data.user_id); else next.delete(data.user_id)
+          return next
+        })
+        return
+      }
       if (data.type === 'message') {
         if (data.id && seenIdsRef.current.has(data.id)) return
         if (data.id) seenIdsRef.current.add(data.id)
@@ -192,7 +206,7 @@ export default function ChatRoom() {
         return
       }
       if (data.type === 'file:rejected') {
-        setMessages(prev => prev.filter(m => !(m.type === 'file' && m.file_id === data.id)))
+        setMessages(prev => prev.map(m => (m.type === 'file' && m.file_id === data.id) ? { ...m, status: 'rejected' } : m))
         setPendingFiles(prev => prev.filter(f => f.id !== data.id))
         return
       }
@@ -204,12 +218,6 @@ export default function ChatRoom() {
       if (data.type === 'pending') {
         setPendingMessages(prev => prev.find(p => p.id === data.id) ? prev : [...prev, data])
         if (soundEnabled && isAdmin) playSound('pending', pendingSoundProfile)
-        return
-      }
-      if (data.type === 'file:rejected') {
-        const pid = 'file_pending_' + data.id
-        setMessages(prev => prev.filter(m => m.id !== pid && m.file_id !== data.id))
-        setPendingFiles(prev => prev.filter(f => f.id !== data.id))
         return
       }
       if (data.type === 'file:pending') {
@@ -235,14 +243,37 @@ export default function ChatRoom() {
     setInput('')
   }
 
+  const formatFileSize = n => {
+    if (n < 1024) return `${n} B`
+    if (n < 1024 ** 2) return `${Math.floor(n / 1024)} KB`
+    return `${(n / 1024 ** 2).toFixed(1)} MB`
+  }
+
   const handleFileUpload = async e => {
-    const file = e.target.files[0]; if (!file || !activeRoom || !connected) return
+    const file = e.target.files[0]; if (!file || !activeRoom) return
+    if (!connected) { setError('Not connected yet — please wait a moment and try again.'); setTimeout(() => setError(''), 4000); e.target.value = ''; return }
     const fd = new FormData(); fd.append('file', file)
     try {
-      await api.post('/chat/rooms/' + activeRoom.id + '/upload-file/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
-      // The pending/approved bubble itself arrives via the websocket
-      // ('file' event, status 'pending' or 'approved') — the upload
-      // response only carries {file_id, status}, not enough to render.
+      const res = await api.post('/chat/rooms/' + activeRoom.id + '/upload-file/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const { file_id, status: fileStatus } = res.data
+      if (file_id) {
+        const localId = fileStatus === 'pending' ? 'file_pending_' + file_id : 'file_' + file_id
+        // Guard the exact broadcast id we expect, so the real event (which
+        // may include a richer file_url from the server) still merges in via
+        // the file_id match below instead of getting skipped as a dup.
+        setMessages(prev => prev.find(m => m.file_id === file_id) ? prev : [...prev, {
+          type: 'file',
+          id: localId,
+          file_id,
+          file_name: file.name,
+          file_size: formatFileSize(file.size),
+          file_url: isImageFile(file.name) ? URL.createObjectURL(file) : null,
+          sender: user?.display_name,
+          role: user?.role,
+          status: fileStatus,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        }])
+      }
     }
     catch { setError('Failed to upload file.'); setTimeout(() => setError(''), 4000) }
     e.target.value = ''
@@ -317,13 +348,13 @@ export default function ChatRoom() {
   const allMembers = activeRoom ? (() => {
     const clientId = activeRoom.client?.id ?? activeRoom.client
     const rows = [
-      { name: getClientDisplay(activeRoom), role: 'client', online: true, id: clientId },
-      ...(activeRoom.providers || []).map(p => ({ name: p.display_name, role: 'provider', online: false, id: p.id, isProvider: true })),
-      ...(activeRoom.extra_clients || []).map(c => ({ name: c.display_name, role: 'client', online: false, id: c.id, isExtraClient: true })),
+      { name: getClientDisplay(activeRoom), role: 'client', online: onlineUserIds.has(clientId), id: clientId },
+      ...(activeRoom.providers || []).map(p => ({ name: p.display_name, role: 'provider', online: onlineUserIds.has(p.id), id: p.id, isProvider: true })),
+      ...(activeRoom.extra_clients || []).map(c => ({ name: c.display_name, role: 'client', online: onlineUserIds.has(c.id), id: c.id, isExtraClient: true })),
     ]
     const meIsListed = rows.some(r => r.id === user?.id)
     if (!meIsListed) {
-      rows.unshift({ name: user?.display_name || 'You', role: user?.role || 'client', online: true, id: user?.id })
+      rows.unshift({ name: user?.display_name || 'You', role: user?.role || 'client', online: onlineUserIds.has(user?.id), id: user?.id })
     }
     return rows.map(r => r.id === user?.id ? { ...r, isYou: true } : r)
   })() : []
@@ -475,6 +506,7 @@ export default function ChatRoom() {
             if (msg.type === 'file') {
               const isImg = isImageFile(msg.file_name)
               const isPending = msg.status === 'pending'
+              const isRejected = msg.status === 'rejected'
               return (
                 <div key={msg.id || idx} style={{ ...S.msgRow, justifyContent: 'flex-start' }}>
                   <div style={{ ...S.msgAv, background: avatarBg(msg.sender) }}>{msg.sender?.[0]?.toUpperCase()}</div>
@@ -483,14 +515,19 @@ export default function ChatRoom() {
                       <span style={S.msgSender}>{msg.sender}</span>
                       {msg.role && <span style={{ ...S.rolePill, background: roleStyle(msg.role).bg, color: roleStyle(msg.role).text }}>{msg.role}</span>}
                     </div>
-                    <div style={{ ...S.fileBubble, ...(isPending ? { borderColor: C.goldBorder, background: C.goldLight } : {}) }}>
+                    <div style={{
+                      ...S.fileBubble,
+                      ...(isPending ? { borderColor: C.goldBorder, background: C.goldLight } : {}),
+                      ...(isRejected ? { borderColor: '#f5b5b5', background: C.redLight } : {}),
+                    }}>
                       {isPending && <div style={S.pendingTag}>⏳ Awaiting approval</div>}
+                      {isRejected && <div style={{ ...S.pendingTag, color: C.red }}>✕ Rejected</div>}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <span style={{ fontSize: 26 }}>{isImg ? '🖼️' : '📄'}</span>
                         <div><div style={S.fileName}>{msg.file_name}</div><div style={S.fileMeta}>{msg.file_size}</div></div>
                       </div>
-                      {isImg && msg.file_url && <img src={msg.file_url} alt={msg.file_name} style={{ width: '100%', borderRadius: 8, marginTop: 10, maxHeight: 200, objectFit: 'cover' }} />}
-                      {msg.file_url && <a href={msg.file_url} target="_blank" rel="noreferrer" style={S.dlLink}>↓ Download</a>}
+                      {isImg && msg.file_url && !isRejected && <img src={msg.file_url} alt={msg.file_name} style={{ width: '100%', borderRadius: 8, marginTop: 10, maxHeight: 200, objectFit: 'cover' }} />}
+                      {msg.file_url && !isRejected && <a href={msg.file_url} target="_blank" rel="noreferrer" style={S.dlLink}>↓ Download</a>}
                       {isAdmin && isPending && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
                           <button className="tjc-approve" style={S.appBtn} onClick={async () => {
@@ -498,7 +535,7 @@ export default function ChatRoom() {
                             catch { setError('Failed to approve.') }
                           }}>✓ Approve</button>
                           <button className="tjc-reject" style={S.rejBtn} onClick={async () => {
-                            try { await api.post('/chat/admin/files/' + msg.file_id + '/reject/'); setMessages(p => p.filter(m => m.id !== msg.id)); setPendingFiles(p => p.filter(f => f.id !== msg.file_id)) }
+                            try { await api.post('/chat/admin/files/' + msg.file_id + '/reject/'); setMessages(p => p.map(m => m.id === msg.id ? { ...m, status: 'rejected' } : m)); setPendingFiles(p => p.filter(f => f.id !== msg.file_id)) }
                             catch { setError('Failed to reject.') }
                           }}>✕ Reject</button>
                         </div>
@@ -965,4 +1002,5 @@ const S = {
   pendCard:     { background: '#fef6e0', border: '1px solid #f0dca0', borderRadius: 9, padding: '9px 11px', marginBottom: 7 },
   closeRoomBtn: { width: '100%', padding: '8px', border: '1px solid #feb2b2', borderRadius: 20, background: '#fff5f5', color: '#e53e3e', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'inherit' },
 }
+
 

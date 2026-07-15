@@ -78,47 +78,55 @@ class UploadFileView(APIView):
         )
 
         if needs_approval:
-            # Admin gets a real, previewable URL — this group is admin-only
-            # (AdminConsumer.connect() rejects non-admins), so it's safe to
-            # include the file URL here even though the file isn't approved yet.
+            # Admin-only URL — safe, this group only ever has admin sockets in it.
+            admin_preview_url = request.build_absolute_uri(shared.file.url)
+
+            # Global admin notification (badge/pending list, regardless of which room they're viewing)
             _push_to_group('admin_pending', {
                 'type':      'pending_file',
                 'id':        shared.id,
                 'file_name': shared.file_name,
                 'file_size': _format_size(shared.file_size),
-                'file_url':  request.build_absolute_uri(shared.file.url),
+                'file_url':  admin_preview_url,
                 'sender':    user.display_name,
                 'room_id':   room.id,
                 'room_name': room.name,
             })
-            return Response({
-                'detail':    'File uploaded and pending admin approval.',
+
+            # Notify the room itself — visible only to the uploader (their own bubble)
+            # and any admin currently viewing this room. Everyone else's socket
+            # will silently ignore this event (see ChatConsumer.pending_file_room).
+            _push_to_group(f'chat_{room.id}', {
+                'type':      'pending_file_room',
                 'id':        shared.id,
-                'file_id':   shared.id,
                 'file_name': shared.file_name,
                 'file_size': _format_size(shared.file_size),
-                'status':    'pending',
+                'sender':    user.display_name,
+                'sender_id': user.id,
+                'role':      user.role,
+                'time':      shared.uploaded_at.strftime('%H:%M'),
+            })
+
+            return Response({
+                'detail':  'File uploaded and pending admin approval.',
+                'file_id': shared.id,
+                'status':  'pending',
             }, status=status.HTTP_201_CREATED)
 
-        file_url = request.build_absolute_uri(shared.file.url)
         _push_to_group(f'chat_{room.id}', {
             'type':      'file_approved',
             'id':        shared.id,
             'file_name': shared.file_name,
             'file_size': _format_size(shared.file_size),
-            'file_url':  file_url,
+            'file_url':  request.build_absolute_uri(shared.file.url),
             'sender':    user.display_name,
             'role':      user.role,
             'time':      shared.uploaded_at.strftime('%H:%M'),
         })
         return Response({
-            'detail':    'File shared.',
-            'id':        shared.id,
-            'file_id':   shared.id,
-            'file_name': shared.file_name,
-            'file_size': _format_size(shared.file_size),
-            'file_url':  file_url,
-            'status':    'direct',
+            'detail':  'File shared.',
+            'file_id': shared.id,
+            'status':  'direct',
         }, status=status.HTTP_201_CREATED)
 
 
@@ -164,20 +172,21 @@ class RejectFileView(APIView):
         shared.status = 'rejected'
         shared.save()
 
-        # Tell the room which specific file was rejected so the uploader's
-        # (and admin's) pending bubble can actually resolve instead of
-        # hanging forever in "pending" state.
-        _push_to_group(f'chat_{shared.room_id}', {
-            'type':    'file_rejected',
-            'id':      shared.id,
-            'sender':  shared.sender.display_name,
-        })
-
         _push_to_group(f'chat_{shared.room_id}', {
             'type':    'system_message',
             'message': f'A file from {shared.sender.display_name} was not approved.',
         })
 
+        # Lets the uploader's (and admin's) pending bubble actually resolve
+        # instead of sitting in "Awaiting approval" forever.
+        _push_to_group(f'chat_{shared.room_id}', {
+            'type':      'file_rejected',
+            'id':        shared.id,
+            'sender_id': shared.sender_id,
+        })
+
         return Response({'detail': 'File rejected.'})
+
+
 
 
