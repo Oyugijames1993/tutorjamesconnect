@@ -3,7 +3,7 @@ from collections import defaultdict
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from .models import ChatRoom, Message, SharedFile
-from .moderation import moderate_message, ACTION_SEND, ACTION_HOLD, ACTION_BLOCK
+from .moderation import moderate_message, ACTION_SEND, ACTION_HOLD, ACTION_BLOCK, ACTION_REDIRECT_ADMIN
 
 # ── In-memory presence tracking ───────────────────────────────────────────────
 # room_id -> { user_id: number_of_open_sockets }
@@ -110,6 +110,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }))
             return
 
+        # ── Negotiation mode: admin has toggled a private pricing/negotiation
+        # conversation with the client. Every client message is forced
+        # admin-only, regardless of content — the provider never sees it.
+        if role == 'client' and room.negotiation_mode:
+            target = 'admin'
+
         action, reason = moderate_message(self.user.role, body)
 
         if action == ACTION_BLOCK:
@@ -117,6 +123,30 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'type':  'error',
                 'error': reason,
             }))
+            return
+
+        if action == ACTION_REDIRECT_ADMIN:
+            # Price/payment talk — deliver immediately, but silently force
+            # this message to admin-only visibility. No approval needed;
+            # this just keeps money talk between the sender and admin,
+            # out of the general project conversation everyone else sees.
+            # _can_see() already restricts target='admin' to admin + the
+            # original sender, so a normal chat_message broadcast is safe.
+            msg = await self.save_message(room, body, 'sent', reason, 'admin')
+            await self.channel_layer.group_send(
+                self.room_group,
+                {
+                    'type':           'chat_message',
+                    'id':             msg.id,
+                    'body':           body,
+                    'sender':         self.user.display_name,
+                    'sender_channel': self.channel_name,
+                    'role':           self.user.role,
+                    'target':         'admin',
+                    'redirected':     True,
+                    'time':           msg.timestamp.strftime('%H:%M'),
+                }
+            )
             return
 
         if action == ACTION_HOLD:
@@ -216,13 +246,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
 
         await self.send(text_data=json.dumps({
-            'type':   'message',
-            'id':     event['id'],
-            'body':   event['body'],
-            'sender': event['sender'],
-            'role':   event['role'],
-            'target': target,
-            'time':   event['time'],
+            'type':       'message',
+            'id':         event['id'],
+            'body':       event['body'],
+            'sender':     event['sender'],
+            'role':       event['role'],
+            'target':     target,
+            'redirected': event.get('redirected', False),
+            'time':       event['time'],
         }))
 
     async def flagged_message(self, event):
@@ -430,23 +461,32 @@ class ChatConsumer(AsyncWebsocketConsumer):
         else:
             # Client
             msgs = list(
-                room.messages.filter(status__in=['sent', 'approved'])
-                .filter(target__in=['everyone', 'client'])
+                room.messages.filter(
+                    Q(status__in=['sent', 'approved'], target__in=['everyone', 'client']) |
+                    Q(sender=self.user)  # always see own messages, regardless of target/status
+                )
                 .select_related('sender')
                 .order_by('timestamp')[:50]
             )
+            # Deduplicate
+            seen = set(); unique = []
+            for m in msgs:
+                if m.id not in seen:
+                    seen.add(m.id); unique.append(m)
+            msgs = unique
 
         text_events = [
             {
-                'type':   'message',
-                'id':     m.id,
-                'body':   m.body,
-                'sender': m.sender.display_name,
-                'role':   m.sender.role,
-                'status': m.status,
-                'target': m.target,
-                'time':   m.timestamp.strftime('%H:%M'),
-                '_ts':    m.timestamp,
+                'type':       'message',
+                'id':         m.id,
+                'body':       m.body,
+                'sender':     m.sender.display_name,
+                'role':       m.sender.role,
+                'status':     m.status,
+                'target':     m.target,
+                'redirected': bool(m.flagged and m.target == 'admin' and m.status != 'pending'),
+                'time':       m.timestamp.strftime('%H:%M'),
+                '_ts':        m.timestamp,
             }
             for m in msgs
         ]
@@ -551,6 +591,3 @@ class AdminConsumer(AsyncWebsocketConsumer):
             'room_id':   event['room_id'],
             'room_name': event['room_name'],
         }))
-
-
-

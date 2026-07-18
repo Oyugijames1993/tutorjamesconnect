@@ -21,6 +21,13 @@ class ChatRoom(models.Model):
     provider_joined_at           = models.DateTimeField(null=True, blank=True)
     created_at                   = models.DateTimeField(auto_now_add=True)
 
+    # When True, every message sent by the CLIENT in this room is silently
+    # forced to admin-only visibility (the provider never sees it), regardless
+    # of content. Toggled by admin whenever they need a private pricing/
+    # negotiation conversation with the client, even if a provider is already
+    # in the room (e.g. re-pricing a new task in an existing, permanent room).
+    negotiation_mode = models.BooleanField(default=False)
+
     def __str__(self):
         return f"{self.name} [{self.status}]"
 
@@ -28,6 +35,10 @@ class ChatRoom(models.Model):
         if user.role == 'admin':
             return True
         if user.id == self.client_id:
+            return True
+        if self.providers.filter(id=user.id).exists():
+            return True
+        if self.extra_clients.filter(id=user.id).exists():
             return True
         return False
 

@@ -384,36 +384,6 @@ class RemoveClientView(APIView):
         return Response(ChatRoomSerializer(room).data, status=200)
 
 
-class CloseRoomView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, room_id):
-        if request.user.role != 'admin':
-            return Response(
-                {'error': 'Only admins can close rooms.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        room = get_object_or_404(ChatRoom, pk=room_id)
-        if room.status == 'closed':
-            return Response(
-                {'error': 'Room is already closed.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        room.status = 'closed'
-        room.save()
-
-        Message.objects.create(
-            room   = room,
-            sender = request.user,
-            body   = 'This room has been closed by the admin. Thank you!',
-            status = 'sent',
-        )
-        return Response(
-            ChatRoomSerializer(room).data,
-            status=status.HTTP_200_OK,
-        )
-
-
 class RoomSettingsView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -429,22 +399,8 @@ class RoomSettingsView(APIView):
             room.client_files_need_approval = request.data['client_files_need_approval']
         if 'files_enabled' in request.data:
             room.files_enabled = request.data['files_enabled']
+        if 'negotiation_mode' in request.data:
+            room.negotiation_mode = request.data['negotiation_mode']
 
         room.save()
         return Response(ChatRoomSerializer(room).data)
-
-
-class DeleteRoomView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def delete(self, request, room_id):
-        if request.user.role != 'admin':
-            return Response({'error': 'Admin only.'}, status=403)
-        room = get_object_or_404(ChatRoom, pk=room_id)
-        if room.status != 'closed':
-            return Response(
-                {'error': 'Only closed rooms can be deleted.'},
-                status=400
-            )
-        room.delete()
-        return Response({'detail': 'Room deleted.'}, status=204)

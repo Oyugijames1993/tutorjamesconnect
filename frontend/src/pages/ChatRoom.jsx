@@ -57,6 +57,7 @@ export default function ChatRoom() {
   const [filesEnabled, setFilesEnabled]       = useState(true)
   const [providerNeedsApproval, setProviderNeedsApproval] = useState(true)
   const [clientNeedsApproval, setClientNeedsApproval]     = useState(false)
+  const [negotiationMode, setNegotiationMode]         = useState(false)
   const [pendingMessages, setPendingMessages] = useState([])
   const [pendingFiles, setPendingFiles]       = useState([])
   const [connected, setConnected]             = useState(false)
@@ -128,6 +129,7 @@ export default function ChatRoom() {
     setFilesEnabled(activeRoom.files_enabled ?? true)
     setProviderNeedsApproval(activeRoom.provider_files_need_approval ?? true)
     setClientNeedsApproval(activeRoom.client_files_need_approval ?? false)
+    setNegotiationMode(activeRoom.negotiation_mode ?? false)
   }, [activeRoom?.id])
 
   useEffect(() => {
@@ -285,8 +287,16 @@ export default function ChatRoom() {
       if (key === 'files_enabled') setFilesEnabled(!value)
       if (key === 'provider_files_need_approval') setProviderNeedsApproval(!value)
       if (key === 'client_files_need_approval') setClientNeedsApproval(!value)
+      if (key === 'negotiation_mode') setNegotiationMode(!value)
       setError('Failed to update setting.'); setTimeout(() => setError(''), 3000)
     }
+  }
+
+  const toggleNegotiationMode = () => {
+    const next = !negotiationMode
+    setNegotiationMode(next)
+    updateSetting('negotiation_mode', next)
+    if (next) setMessageTarget('client')
   }
 
   const inviteProvider = async () => {
@@ -466,6 +476,9 @@ export default function ChatRoom() {
                 <span style={S.sep}>·</span>
                 Files {filesEnabled ? 'enabled' : 'disabled'}
               </div>
+              {negotiationMode && (isAdmin || isProvider) && (
+                <div style={S.negotiationBanner}>🤝 Negotiation mode is ON — client messages go to admin only</div>
+              )}
             </div>
           </div>
           <div style={S.headerR}>
@@ -547,11 +560,12 @@ export default function ChatRoom() {
               )
             }
 
-            const isMe      = msg.sender === user?.display_name
-            const isFlagged = msg.status === 'pending'
-            const sRole     = msg.role || 'client'
-            const showVis   = (isAdmin || isProvider) && msg.target && msg.target !== 'everyone'
-            const visColor  = msg.target === 'client' ? { bg: C.clientBg, text: C.clientText } : msg.target === 'provider' ? { bg: C.providerBg, text: C.providerText } : { bg: C.adminBg, text: C.adminText }
+            const isMe        = msg.sender === user?.display_name
+            const isFlagged   = msg.status === 'pending'
+            const isRedirected = !!msg.redirected
+            const sRole       = msg.role || 'client'
+            const showVis     = (isAdmin || isProvider || isMe) && !isRedirected && msg.target && msg.target !== 'everyone'
+            const visColor    = msg.target === 'client' ? { bg: C.clientBg, text: C.clientText } : msg.target === 'provider' ? { bg: C.providerBg, text: C.providerText } : { bg: C.adminBg, text: C.adminText }
 
             return (
               <div key={msg.id || idx} style={{ ...S.msgRow, justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
@@ -583,6 +597,11 @@ export default function ChatRoom() {
                       </div>
                     )}
                   </div>
+                  {isRedirected && (isAdmin || isMe) && (
+                    <div style={{ ...S.visPill, background: C.adminBg, color: C.adminText, justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
+                      🔒 {isMe ? 'Kept private with admin' : `Kept private (from ${msg.sender})`}
+                    </div>
+                  )}
                   {showVis && (
                     <div style={{ ...S.visPill, background: visColor.bg, color: visColor.text, justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
                       👁 Visible to: {msg.target === 'client' ? 'Client only' : msg.target === 'provider' ? 'Provider only' : 'Admin only'}
@@ -644,6 +663,13 @@ export default function ChatRoom() {
                   {opt.icon} {opt.label}
                 </button>
               ))}
+              {isAdmin && (
+                <button className="tjc-target" onClick={toggleNegotiationMode}
+                  style={{ ...S.targetBtn, ...(negotiationMode ? S.negotiationOn : {}) }}
+                  title="While on, every client message goes to you only — the provider never sees it.">
+                  🤝 Negotiation {negotiationMode ? '· ON' : ''}
+                </button>
+              )}
               <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: connected ? C.green : C.amber }}>
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} />
                 {connected ? 'Connected' : 'Connecting…'}
@@ -789,24 +815,6 @@ export default function ChatRoom() {
                     ))}
                   </div>
                 )}
-
-                {isAdmin && (
-                  <div style={{ padding: '12px 14px' }}>
-                    {activeRoom.status !== 'closed' ? (
-                      <button style={S.closeRoomBtn} onClick={async () => {
-                        if (!window.confirm('Close this room?')) return
-                        try { const res = await api.post('/chat/rooms/' + activeRoom.id + '/close/'); setActiveRoom(res.data); api.get('/chat/rooms/').then(r => setRooms(r.data)) }
-                        catch { setError('Failed to close room.') }
-                      }}>🔒 Close Room</button>
-                    ) : (
-                      <button style={S.closeRoomBtn} onClick={async () => {
-                        if (!window.confirm('Permanently delete this room?')) return
-                        try { await api.delete('/chat/rooms/' + activeRoom.id + '/delete/'); const res = await api.get('/chat/rooms/'); setRooms(res.data); if (res.data.length > 0) setActiveRoom(res.data[0]) }
-                        catch { setError('Failed to delete room.') }
-                      }}>🗑 Delete Room</button>
-                    )}
-                  </div>
-                )}
               </>
             )}
 
@@ -918,6 +926,7 @@ const S = {
   roomHeaderAv: { width: 40, height: 40, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 700, flexShrink: 0 },
   headerRoomName: { fontSize: 15, fontWeight: 600, color: '#111b21', letterSpacing: '-0.1px' },
   headerRoomMeta: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#667781', marginTop: 2 },
+  negotiationBanner: { fontSize: 11, fontWeight: 700, color: '#8a6d00', background: '#fef6e0', padding: '2px 8px', borderRadius: 20, marginTop: 4, display: 'inline-block' },
   sep:          { color: '#c9cfd3' },
   headerDot:    { position: 'absolute', top: 4, right: 4, width: 7, height: 7, borderRadius: '50%', background: '#e53e3e' },
   errorBar:     { background: '#fff0ef', color: '#e53e3e', padding: '7px 18px', fontSize: 13, borderBottom: '1px solid #feb2b2' },
@@ -965,6 +974,7 @@ const S = {
   targetLbl:    { fontSize: 11, color: '#8696a0', fontWeight: 600 },
   targetBtn:    { fontSize: 11, padding: '4px 11px', borderRadius: 20, border: '1.5px solid #e9edef', cursor: 'pointer', background: '#fff', color: '#54656f', transition: 'all 0.15s', fontFamily: 'inherit' },
   targetOn:     { background: '#00a884', color: '#fff', borderColor: '#00a884', fontWeight: 600 },
+  negotiationOn: { background: '#fef6e0', color: '#8a6d00', borderColor: '#d69e2e', fontWeight: 700 },
 
   appBtn:       { flex: 1, padding: '5px 8px', border: '1px solid #9ae6b4', borderRadius: 6, background: '#f0fff4', color: '#276749', fontSize: 11, fontWeight: 600, cursor: 'pointer', transition: 'background 0.15s', fontFamily: 'inherit' },
   rejBtn:       { flex: 1, padding: '5px 8px', border: '1px solid #feb2b2', borderRadius: 6, background: '#fff5f5', color: '#e53e3e', fontSize: 11, fontWeight: 600, cursor: 'pointer', transition: 'background 0.15s', fontFamily: 'inherit' },
@@ -1002,5 +1012,3 @@ const S = {
   pendCard:     { background: '#fef6e0', border: '1px solid #f0dca0', borderRadius: 9, padding: '9px 11px', marginBottom: 7 },
   closeRoomBtn: { width: '100%', padding: '8px', border: '1px solid #feb2b2', borderRadius: 20, background: '#fff5f5', color: '#e53e3e', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'inherit' },
 }
-
-

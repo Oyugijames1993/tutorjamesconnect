@@ -20,5 +20,6 @@ class ChatRoomSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'client', 'extra_clients', 'providers',
             'status', 'files_enabled', 'client_files_need_approval',
-            'provider_files_need_approval', 'created_at'
+            'provider_files_need_approval', 'negotiation_mode', 'created_at'
         ]
+
