@@ -15,6 +15,7 @@ export default function AdminDashboard() {
   const [rooms, setRooms]             = useState([])
   const [pending, setPending]         = useState([])
   const [pendingFiles, setPendingFiles] = useState([])
+  const [accessRequests, setAccessRequests] = useState([])
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState('')
 
@@ -32,12 +33,13 @@ export default function AdminDashboard() {
   const loadAll = async () => {
     setLoading(true)
     try {
-      const [ov, users, rm, pend, pf] = await Promise.all([
+      const [ov, users, rm, pend, pf, ar] = await Promise.all([
         api.get('/dashboard/overview/'),
         api.get('/accounts/users/'),
         api.get('/chat/rooms/'),
         api.get('/chat/admin/pending/'),
         api.get('/chat/admin/files/'),
+        api.get('/accounts/admin/access-requests/'),
       ])
       setOverview(ov.data)
       setClients(users.data.filter(u => u.role === 'client'))
@@ -45,6 +47,7 @@ export default function AdminDashboard() {
       setRooms(rm.data)
       setPending(pend.data)
       setPendingFiles(pf.data)
+      setAccessRequests(ar.data)
     } catch (err) {
       setError('Failed to load dashboard data.')
     } finally {
@@ -118,6 +121,7 @@ export default function AdminDashboard() {
     { id: 'providers', label: '🎓 Providers' },
     { id: 'rooms',     label: '💬 Chat Rooms' },
     { id: 'pending',   label: `⏳ Pending ${totalPending > 0 ? '(' + totalPending + ')' : ''}` },
+    { id: 'access',    label: `🔐 Access Requests ${accessRequests.length > 0 ? '(' + accessRequests.length + ')' : ''}` },
   ]
 
   if (loading) return (
@@ -543,6 +547,75 @@ export default function AdminDashboard() {
               )}
             </div>
 
+          </div>
+        )}
+
+        {/* ── ACCESS REQUESTS TAB ── */}
+        {activeTab === 'access' && (
+          <div style={styles.content}>
+            <div style={styles.section}>
+              <div style={styles.sectionTitle}>
+                Pending Access Requests ({accessRequests.length})
+              </div>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 16 }}>
+                Someone lost access and asked for a fresh link. Confirm it's really them, then send
+                the link over WhatsApp — nothing is sent automatically.
+              </div>
+              {accessRequests.length === 0 ? (
+                <div style={styles.emptyState}>✅ No pending access requests</div>
+              ) : (
+                accessRequests.map(r => (
+                  <div key={r.id} style={styles.pendingCard}>
+                    <div style={styles.pendingInfo}>
+                      <span style={styles.pendingFrom}>{r.user_display}</span>
+                      <span style={{
+                        fontSize: 12, fontWeight: 600,
+                        color: r.role === 'provider' ? '#1a7a4a' : '#1a56a0',
+                      }}>
+                        {r.role === 'provider' ? '🎓 Provider' : '👤 Client'}
+                      </span>
+                      <span style={{ fontSize: 12, color: '#888' }}>
+                        {r.phone_number || 'No phone on file'}
+                      </span>
+                      <span style={styles.pendingTime}>
+                        {new Date(r.created_at).toLocaleString()}
+                      </span>
+                    </div>
+                    {!r.is_valid && (
+                      <div style={{ fontSize: 12, color: '#e53e3e', marginBottom: 8 }}>
+                        ⚠️ This link has expired — ask them to request access again.
+                      </div>
+                    )}
+                    {r.phone_number ? (
+                      <a
+                        href={
+                          `https://wa.me/${r.phone_number.replace(/[^0-9]/g, '')}` +
+                          `?text=${encodeURIComponent(
+                            `Hi ${r.user_display}, here's your link back into TutorJamesConnect: ${r.magic_link}`
+                          )}`
+                        }
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          ...styles.approveBtn,
+                          display: 'inline-block',
+                          textDecoration: 'none',
+                          textAlign: 'center',
+                          opacity: r.is_valid ? 1 : 0.5,
+                          pointerEvents: r.is_valid ? 'auto' : 'none',
+                        }}
+                      >
+                        📲 Send via WhatsApp
+                      </a>
+                    ) : (
+                      <div style={{ fontSize: 12, color: '#888' }}>
+                        No phone number on file — can't send via WhatsApp.
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
 

@@ -28,6 +28,12 @@ class ChatRoom(models.Model):
     # in the room (e.g. re-pricing a new task in an existing, permanent room).
     negotiation_mode = models.BooleanField(default=False)
 
+    # What the client originally signed up for. A room is permanent and can
+    # outlive any single project, so this reflects the initial/most recent
+    # course context rather than a strict history — good enough for admin's
+    # quick reference in Room Info.
+    course = models.CharField(max_length=200, blank=True)
+
     def __str__(self):
         return f"{self.name} [{self.status}]"
 
@@ -70,6 +76,30 @@ class Message(models.Model):
 
     def __str__(self):
         return f"{self.sender.username} → {self.room.name}: {self.body[:50]}"
+
+
+class RoomCounter(models.Model):
+    """
+    A single-row counter used to hand out clean, gap-free 'Client N' room
+    names. Deliberately separate from CustomUser.client_id (which numbers
+    ALL users — admins, providers, clients — in raw signup order and has
+    gaps), and separate from ChatRoom.pk (which would have gaps if any room
+    were ever created for a non-client purpose, or reused after deletion).
+
+    Use next_client_room_name() below rather than incrementing this
+    directly — it wraps the read-increment-write in a row lock so two
+    concurrent signups can never be handed the same number.
+    """
+    value = models.PositiveIntegerField(default=0)
+
+
+def next_client_room_name():
+    from django.db import transaction
+    with transaction.atomic():
+        counter, _ = RoomCounter.objects.select_for_update().get_or_create(pk=1)
+        counter.value += 1
+        counter.save()
+        return f"Client {counter.value}"
 
 
 class SharedFile(models.Model):

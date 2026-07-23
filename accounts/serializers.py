@@ -104,3 +104,43 @@ class ProviderRegisterSerializer(serializers.ModelSerializer):
             rate_max       = rate_max,
         )
         return user
+
+
+class ClientSignupSerializer(serializers.Serializer):
+    """
+    The new frictionless client signup: phone, email, full name, course.
+    No password — this account is only ever accessed via a persistent
+    session or a WhatsApp-delivered access link (see RoomAccessToken).
+    Deliberately a plain Serializer, not a ModelSerializer, since this
+    creates BOTH a CustomUser and a ChatRoom together and doesn't map
+    cleanly onto either model alone.
+    """
+    full_name    = serializers.CharField(max_length=150)
+    email        = serializers.EmailField()
+    phone_number = serializers.CharField(max_length=20)
+    course       = serializers.CharField(max_length=200, required=False, allow_blank=True)
+
+    def validate_email(self, value):
+        if CustomUser.objects.filter(email=value).exists():
+            raise serializers.ValidationError('This email is already registered.')
+        return value
+
+    def validate_phone_number(self, value):
+        if CustomUser.objects.filter(phone_number=value, role='client').exists():
+            raise serializers.ValidationError(
+                'This phone number is already registered. Use "Lost access?" to get back into your room.'
+            )
+        return value
+
+    def create(self, validated_data):
+        user = CustomUser(
+            username     = validated_data['email'],
+            email        = validated_data['email'],
+            first_name   = validated_data['full_name'],
+            phone_number = validated_data['phone_number'],
+            role         = 'client',
+        )
+        user.set_unusable_password()
+        user.save()
+        return user
+

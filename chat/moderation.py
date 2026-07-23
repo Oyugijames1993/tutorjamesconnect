@@ -1,28 +1,66 @@
 # chat/moderation.py
+# chat/moderation.py
 import re
 
 # ── Currency and price discussion ─────────────────────────────────────────────
-PRICE_RE = re.compile(
-    r'\b(kd|usd|eur|gbp|ksh|kes|ngn|aed|sar|inr|pkr|price|prices|'
-    r'pay|paid|payment|payments|cost|costs|fee|fees|rate|rates|'
-    r'quote|quotes|budget|charge|charges|invoice|'
-    r'per\s+word|per\s+hour|per\s+project|'
-    r'how\s+much|how\s+many|total|amount|'
-    r'cheap|expensive|afford|discount|offer|deal)\b'
-    r'|[\$£€¥₦₹₨]',
+# Tightened from the original version, which held ANY message containing
+# ordinary words like "rate", "total", "amount", "how many", "cheap",
+# "afford", "offer", "deal" — these fire constantly in normal project chat
+# ("what's the completion rate", "how many pages", "afford the time to
+# review this") and, since price detection is now auto-delivered with no
+# human review step, a false positive here silently hides an ordinary
+# message from the provider instead of just delaying it. This version
+# requires either a currency symbol/code, a number next to a currency
+# word, or an explicit price/payment phrase — not a single generic word.
+CURRENCY_SYMBOL_RE = re.compile(r'[\$£€¥₦₹₨]')
+
+CURRENCY_CODE_RE = re.compile(
+    r'\b(kes|ksh|usd|eur|gbp|ngn|aed|sar|inr|pkr)\b',
     re.IGNORECASE
 )
 
+NUMBER_NEAR_MONEY_RE = re.compile(
+    r'\d+\s*(kes|ksh|usd|eur|gbp|dollars?|shillings?|naira|pounds?|bucks?)\b'
+    r'|(kes|ksh|usd|eur|gbp|dollars?|shillings?|naira|pounds?|bucks?)\s*\d+',
+    re.IGNORECASE
+)
+
+STRONG_PRICE_PHRASE_RE = re.compile(
+    r'\bhow\s+much\s+(does|will|would|is|for)\b'
+    r'|\bwhat\s+(is|are|\'s)\s+the\s+(price|cost|rate|fee|charge)\b'
+    r'|\bprice\s+(is|for|of|list)\b'
+    r'|\bquote\s+(me|for|is|you)\b'
+    r'|\bpayment\s+(plan|method|methods|details|terms|link)\b'
+    r'|\bpay\s+(me|you|upfront|in\s+advance|now)\b'
+    r'|\binvoice\b'
+    r'|\bbudget\s+(is|for|of)\b'
+    r'|\bnegotiate\s+(the\s+)?(price|rate|fee)\b'
+    r'|\bdiscount\b'
+    r'|\bper\s+(word|hour|page|project|assignment)\b'
+    r'|\b(pay|paid|cost|fee|charge)(s)?\b',
+    re.IGNORECASE
+)
+
+
+def is_price_related(body):
+    return bool(
+        CURRENCY_SYMBOL_RE.search(body) or
+        CURRENCY_CODE_RE.search(body) or
+        NUMBER_NEAR_MONEY_RE.search(body) or
+        STRONG_PRICE_PHRASE_RE.search(body)
+    )
+
+
 # ── Phone numbers (numeric) ───────────────────────────────────────────────────
+# The original version had a bug: the "common country codes" fallback matched
+# bare "+1" or "+7" with NO digits required afterward — so "+1 for that idea"
+# or a stray "+7" would be flagged as a phone number. The first alternative
+# below already robustly covers real international numbers (8+ digit-ish
+# characters after an optional +), so the redundant/buggy country-code-only
+# fallback has been removed rather than patched.
 PHONE_RE = re.compile(
     # International format with country code
     r'(\+?\d[\d\s\-()\u200B]{7,})'
-
-    # Country code + digit e.g. +254 7, +1 800
-    r'|(\+\d{1,3}[\s\-]?\d)'
-
-    # International prefix e.g. 00254, 001
-    r'|(\b00\d{1,3}[\s\-]?\d)'
 
     # Local format e.g. 0712345678
     r'|(\b0\d{9,10}\b)'
@@ -31,12 +69,7 @@ PHONE_RE = re.compile(
     r'|(\b1[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{4}\b)'
     r'|(\(\d{3}\)[\s\-]?\d{3}[\s\-]?\d{4})'
     r'|(\b\d{3}[\s\-]\d{3}[\s\-]\d{4}\b)'
-    r'|(\b\d{10}\b)'
-
-    # Common country codes +1 to +99
-    r'|(\+1|\+2[0-9]|\+3[0-9]|\+4[0-9]'
-    r'|\+5[0-9]|\+6[0-9]|\+7|\+8[0-9]'
-    r'|\+9[0-9])',
+    r'|(\b\d{10}\b)',
     re.IGNORECASE
 )
 
@@ -93,27 +126,37 @@ CONTACT_RE = re.compile(
 )
 
 # ── Actions ───────────────────────────────────────────────────────────────────
-ACTION_SEND  = 'send'
-ACTION_HOLD  = 'hold'
-ACTION_BLOCK = 'block'
+ACTION_SEND          = 'send'           # deliver immediately, as requested
+ACTION_HOLD          = 'hold'           # save as pending, notify admin, needs manual approve/reject
+ACTION_BLOCK         = 'block'          # reject outright, not saved
+ACTION_REDIRECT_ADMIN = 'redirect_admin'  # deliver immediately, but force target to admin-only — no approval needed
 
 
 def moderate_message(sender_role, body):
     """
     Moderate messages from both providers and clients.
     Admin messages are never moderated.
+
     Returns (action, reason):
-        send  — deliver immediately
-        hold  — save as pending, notify admin
-        block — reject, not saved
+        send           — deliver immediately, as requested
+        redirect_admin — deliver immediately, but silently force the
+                          message to be admin-only visible (price/payment
+                          talk). No approval needed — this just keeps
+                          money discussion between admin and the sender,
+                          out of the general project conversation.
+        hold           — save as pending, notify admin, needs a manual
+                          approve/reject (contact-sharing attempts — these
+                          get a human look since they can be a deliberate
+                          attempt to move the relationship off-platform).
+        block          — reject, not saved
     """
     # Admin messages are never moderated
     if sender_role == 'admin':
         return ACTION_SEND, None
 
-    # ── Price/payment discussion — HOLD for admin review ──────────────────
-    if PRICE_RE.search(body):
-        return ACTION_HOLD, 'Price or payment discussion detected — pending admin review.'
+    # ── Price/payment discussion — auto-redirect to admin-only, no approval ──
+    if is_price_related(body):
+        return ACTION_REDIRECT_ADMIN, 'Price or payment discussion — kept between you and the admin.'
 
     # ── Numeric phone number — HOLD for admin review ──────────────────────
     if PHONE_RE.search(body):

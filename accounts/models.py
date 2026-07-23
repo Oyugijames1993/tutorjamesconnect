@@ -2,6 +2,7 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 import random
+import secrets
 from django.utils import timezone
 
 
@@ -13,11 +14,20 @@ class CustomUser(AbstractUser):
     ]
 
     role         = models.CharField(max_length=10, choices=ROLE_CHOICES, default='client')
-    phone_number = models.CharField(max_length=20, blank=True)
+    phone_number = models.CharField(max_length=20, blank=True, null=True)
     email        = models.EmailField(unique=True)
     client_id    = models.CharField(max_length=20, unique=True, blank=True, null=True)
     is_verified  = models.BooleanField(default=False)
     created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['phone_number'],
+                condition=models.Q(role='client'),
+                name='unique_phone_number_per_client',
+            )
+        ]
 
     def save(self, *args, **kwargs):
         # Auto-assign client_id when a client registers
@@ -69,3 +79,32 @@ class OTP(models.Model):
 
     def __str__(self):
         return f"{self.user.display_name} - {self.code}"
+
+
+class RoomAccessToken(models.Model):
+    """
+    Passwordless recovery for clients who've lost their session (new device,
+    cleared browser, etc). A client requests access with just their phone
+    number; this token is generated server-side and handed to admin to send
+    over WhatsApp — never sent automatically, and never shown to anyone but
+    admin. Single-use, short-lived.
+    """
+    user       = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='access_tokens')
+    token      = models.CharField(max_length=64, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_at    = models.DateTimeField(null=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        if not self.token:
+            self.token = secrets.token_urlsafe(32)
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timezone.timedelta(hours=24)
+        super().save(*args, **kwargs)
+
+    def is_valid(self):
+        return self.used_at is None and timezone.now() < self.expires_at
+
+    def __str__(self):
+        return f"{self.user.display_name} access token ({'used' if self.used_at else 'active'})"
+
