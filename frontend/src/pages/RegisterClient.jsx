@@ -4,324 +4,403 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
 
+const COUNTRY_CODES = [
+  { code: '+93',  name: 'Afghanistan',              flag: '🇦🇫' },
+  { code: '+355', name: 'Albania',                  flag: '🇦🇱' },
+  { code: '+213', name: 'Algeria',                  flag: '🇩🇿' },
+  { code: '+1',   name: 'American Samoa',           flag: '🇦🇸' },
+  { code: '+376', name: 'Andorra',                  flag: '🇦🇩' },
+  { code: '+244', name: 'Angola',                   flag: '🇦🇴' },
+  { code: '+1',   name: 'Anguilla',                 flag: '🇦🇮' },
+  { code: '+1',   name: 'Antigua and Barbuda',      flag: '🇦🇬' },
+  { code: '+54',  name: 'Argentina',                flag: '🇦🇷' },
+  { code: '+374', name: 'Armenia',                  flag: '🇦🇲' },
+  { code: '+297', name: 'Aruba',                    flag: '🇦🇼' },
+  { code: '+61',  name: 'Australia',                flag: '🇦🇺' },
+  { code: '+43',  name: 'Austria',                  flag: '🇦🇹' },
+  { code: '+994', name: 'Azerbaijan',                flag: '🇦🇿' },
+  { code: '+1',   name: 'Bahamas',                  flag: '🇧🇸' },
+  { code: '+973', name: 'Bahrain',                  flag: '🇧🇭' },
+  { code: '+880', name: 'Bangladesh',                flag: '🇧🇩' },
+  { code: '+1',   name: 'Barbados',                 flag: '🇧🇧' },
+  { code: '+375', name: 'Belarus',                  flag: '🇧🇾' },
+  { code: '+32',  name: 'Belgium',                  flag: '🇧🇪' },
+  { code: '+501', name: 'Belize',                   flag: '🇧🇿' },
+  { code: '+229', name: 'Benin',                    flag: '🇧🇯' },
+  { code: '+1',   name: 'Bermuda',                  flag: '🇧🇲' },
+  { code: '+975', name: 'Bhutan',                   flag: '🇧🇹' },
+  { code: '+591', name: 'Bolivia',                  flag: '🇧🇴' },
+  { code: '+387', name: 'Bosnia and Herzegovina',   flag: '🇧🇦' },
+  { code: '+267', name: 'Botswana',                 flag: '🇧🇼' },
+  { code: '+55',  name: 'Brazil',                   flag: '🇧🇷' },
+  { code: '+1',   name: 'British Virgin Islands',   flag: '🇻🇬' },
+  { code: '+673', name: 'Brunei',                   flag: '🇧🇳' },
+  { code: '+359', name: 'Bulgaria',                 flag: '🇧🇬' },
+  { code: '+226', name: 'Burkina Faso',             flag: '🇧🇫' },
+  { code: '+257', name: 'Burundi',                  flag: '🇧🇮' },
+  { code: '+855', name: 'Cambodia',                 flag: '🇰🇭' },
+  { code: '+237', name: 'Cameroon',                 flag: '🇨🇲' },
+  { code: '+1',   name: 'Canada',                   flag: '🇨🇦' },
+  { code: '+238', name: 'Cape Verde',                flag: '🇨🇻' },
+  { code: '+1',   name: 'Cayman Islands',           flag: '🇰🇾' },
+  { code: '+236', name: 'Central African Republic', flag: '🇨🇫' },
+  { code: '+235', name: 'Chad',                     flag: '🇹🇩' },
+  { code: '+56',  name: 'Chile',                    flag: '🇨🇱' },
+  { code: '+86',  name: 'China',                    flag: '🇨🇳' },
+  { code: '+57',  name: 'Colombia',                 flag: '🇨🇴' },
+  { code: '+269', name: 'Comoros',                  flag: '🇰🇲' },
+  { code: '+243', name: 'Congo (DRC)',              flag: '🇨🇩' },
+  { code: '+242', name: 'Congo (Republic)',         flag: '🇨🇬' },
+  { code: '+682', name: 'Cook Islands',             flag: '🇨🇰' },
+  { code: '+506', name: 'Costa Rica',               flag: '🇨🇷' },
+  { code: '+225', name: "Côte d'Ivoire",            flag: '🇨🇮' },
+  { code: '+385', name: 'Croatia',                  flag: '🇭🇷' },
+  { code: '+53',  name: 'Cuba',                     flag: '🇨🇺' },
+  { code: '+357', name: 'Cyprus',                   flag: '🇨🇾' },
+  { code: '+420', name: 'Czech Republic',           flag: '🇨🇿' },
+  { code: '+45',  name: 'Denmark',                  flag: '🇩🇰' },
+  { code: '+253', name: 'Djibouti',                 flag: '🇩🇯' },
+  { code: '+1',   name: 'Dominica',                 flag: '🇩🇲' },
+  { code: '+1',   name: 'Dominican Republic',       flag: '🇩🇴' },
+  { code: '+593', name: 'Ecuador',                  flag: '🇪🇨' },
+  { code: '+20',  name: 'Egypt',                    flag: '🇪🇬' },
+  { code: '+503', name: 'El Salvador',              flag: '🇸🇻' },
+  { code: '+240', name: 'Equatorial Guinea',        flag: '🇬🇶' },
+  { code: '+291', name: 'Eritrea',                  flag: '🇪🇷' },
+  { code: '+372', name: 'Estonia',                  flag: '🇪🇪' },
+  { code: '+268', name: 'Eswatini',                 flag: '🇸🇿' },
+  { code: '+251', name: 'Ethiopia',                 flag: '🇪🇹' },
+  { code: '+679', name: 'Fiji',                     flag: '🇫🇯' },
+  { code: '+358', name: 'Finland',                  flag: '🇫🇮' },
+  { code: '+33',  name: 'France',                   flag: '🇫🇷' },
+  { code: '+241', name: 'Gabon',                    flag: '🇬🇦' },
+  { code: '+220', name: 'Gambia',                   flag: '🇬🇲' },
+  { code: '+995', name: 'Georgia',                  flag: '🇬🇪' },
+  { code: '+49',  name: 'Germany',                  flag: '🇩🇪' },
+  { code: '+233', name: 'Ghana',                    flag: '🇬🇭' },
+  { code: '+30',  name: 'Greece',                   flag: '🇬🇷' },
+  { code: '+1',   name: 'Grenada',                  flag: '🇬🇩' },
+  { code: '+502', name: 'Guatemala',                flag: '🇬🇹' },
+  { code: '+224', name: 'Guinea',                   flag: '🇬🇳' },
+  { code: '+245', name: 'Guinea-Bissau',            flag: '🇬🇼' },
+  { code: '+592', name: 'Guyana',                   flag: '🇬🇾' },
+  { code: '+509', name: 'Haiti',                    flag: '🇭🇹' },
+  { code: '+504', name: 'Honduras',                 flag: '🇭🇳' },
+  { code: '+852', name: 'Hong Kong',                flag: '🇭🇰' },
+  { code: '+36',  name: 'Hungary',                  flag: '🇭🇺' },
+  { code: '+354', name: 'Iceland',                  flag: '🇮🇸' },
+  { code: '+91',  name: 'India',                    flag: '🇮🇳' },
+  { code: '+62',  name: 'Indonesia',                flag: '🇮🇩' },
+  { code: '+98',  name: 'Iran',                     flag: '🇮🇷' },
+  { code: '+964', name: 'Iraq',                     flag: '🇮🇶' },
+  { code: '+353', name: 'Ireland',                  flag: '🇮🇪' },
+  { code: '+972', name: 'Israel',                   flag: '🇮🇱' },
+  { code: '+39',  name: 'Italy',                    flag: '🇮🇹' },
+  { code: '+1',   name: 'Jamaica',                  flag: '🇯🇲' },
+  { code: '+81',  name: 'Japan',                    flag: '🇯🇵' },
+  { code: '+962', name: 'Jordan',                   flag: '🇯🇴' },
+  { code: '+7',   name: 'Kazakhstan',               flag: '🇰🇿' },
+  { code: '+254', name: 'Kenya',                    flag: '🇰🇪' },
+  { code: '+686', name: 'Kiribati',                 flag: '🇰🇮' },
+  { code: '+965', name: 'Kuwait',                   flag: '🇰🇼' },
+  { code: '+996', name: 'Kyrgyzstan',               flag: '🇰🇬' },
+  { code: '+856', name: 'Laos',                     flag: '🇱🇦' },
+  { code: '+371', name: 'Latvia',                   flag: '🇱🇻' },
+  { code: '+961', name: 'Lebanon',                  flag: '🇱🇧' },
+  { code: '+266', name: 'Lesotho',                  flag: '🇱🇸' },
+  { code: '+231', name: 'Liberia',                  flag: '🇱🇷' },
+  { code: '+218', name: 'Libya',                    flag: '🇱🇾' },
+  { code: '+423', name: 'Liechtenstein',            flag: '🇱🇮' },
+  { code: '+370', name: 'Lithuania',                flag: '🇱🇹' },
+  { code: '+352', name: 'Luxembourg',               flag: '🇱🇺' },
+  { code: '+853', name: 'Macau',                    flag: '🇲🇴' },
+  { code: '+261', name: 'Madagascar',                flag: '🇲🇬' },
+  { code: '+265', name: 'Malawi',                   flag: '🇲🇼' },
+  { code: '+60',  name: 'Malaysia',                 flag: '🇲🇾' },
+  { code: '+960', name: 'Maldives',                 flag: '🇲🇻' },
+  { code: '+223', name: 'Mali',                     flag: '🇲🇱' },
+  { code: '+356', name: 'Malta',                    flag: '🇲🇹' },
+  { code: '+692', name: 'Marshall Islands',         flag: '🇲🇭' },
+  { code: '+222', name: 'Mauritania',                flag: '🇲🇷' },
+  { code: '+230', name: 'Mauritius',                flag: '🇲🇺' },
+  { code: '+52',  name: 'Mexico',                   flag: '🇲🇽' },
+  { code: '+691', name: 'Micronesia',                flag: '🇫🇲' },
+  { code: '+373', name: 'Moldova',                  flag: '🇲🇩' },
+  { code: '+377', name: 'Monaco',                   flag: '🇲🇨' },
+  { code: '+976', name: 'Mongolia',                 flag: '🇲🇳' },
+  { code: '+382', name: 'Montenegro',                flag: '🇲🇪' },
+  { code: '+212', name: 'Morocco',                  flag: '🇲🇦' },
+  { code: '+258', name: 'Mozambique',                flag: '🇲🇿' },
+  { code: '+95',  name: 'Myanmar',                  flag: '🇲🇲' },
+  { code: '+264', name: 'Namibia',                  flag: '🇳🇦' },
+  { code: '+674', name: 'Nauru',                    flag: '🇳🇷' },
+  { code: '+977', name: 'Nepal',                    flag: '🇳🇵' },
+  { code: '+31',  name: 'Netherlands',              flag: '🇳🇱' },
+  { code: '+64',  name: 'New Zealand',              flag: '🇳🇿' },
+  { code: '+505', name: 'Nicaragua',                flag: '🇳🇮' },
+  { code: '+227', name: 'Niger',                    flag: '🇳🇪' },
+  { code: '+234', name: 'Nigeria',                  flag: '🇳🇬' },
+  { code: '+850', name: 'North Korea',              flag: '🇰🇵' },
+  { code: '+389', name: 'North Macedonia',          flag: '🇲🇰' },
+  { code: '+47',  name: 'Norway',                   flag: '🇳🇴' },
+  { code: '+968', name: 'Oman',                     flag: '🇴🇲' },
+  { code: '+92',  name: 'Pakistan',                 flag: '🇵🇰' },
+  { code: '+680', name: 'Palau',                    flag: '🇵🇼' },
+  { code: '+970', name: 'Palestine',                flag: '🇵🇸' },
+  { code: '+507', name: 'Panama',                   flag: '🇵🇦' },
+  { code: '+675', name: 'Papua New Guinea',         flag: '🇵🇬' },
+  { code: '+595', name: 'Paraguay',                 flag: '🇵🇾' },
+  { code: '+51',  name: 'Peru',                     flag: '🇵🇪' },
+  { code: '+63',  name: 'Philippines',              flag: '🇵🇭' },
+  { code: '+48',  name: 'Poland',                   flag: '🇵🇱' },
+  { code: '+351', name: 'Portugal',                 flag: '🇵🇹' },
+  { code: '+1',   name: 'Puerto Rico',              flag: '🇵🇷' },
+  { code: '+974', name: 'Qatar',                    flag: '🇶🇦' },
+  { code: '+40',  name: 'Romania',                  flag: '🇷🇴' },
+  { code: '+7',   name: 'Russia',                   flag: '🇷🇺' },
+  { code: '+250', name: 'Rwanda',                   flag: '🇷🇼' },
+  { code: '+1',   name: 'Saint Kitts and Nevis',    flag: '🇰🇳' },
+  { code: '+1',   name: 'Saint Lucia',              flag: '🇱🇨' },
+  { code: '+1',   name: 'Saint Vincent and the Grenadines', flag: '🇻🇨' },
+  { code: '+685', name: 'Samoa',                    flag: '🇼🇸' },
+  { code: '+378', name: 'San Marino',               flag: '🇸🇲' },
+  { code: '+239', name: 'São Tomé and Príncipe',    flag: '🇸🇹' },
+  { code: '+966', name: 'Saudi Arabia',             flag: '🇸🇦' },
+  { code: '+221', name: 'Senegal',                  flag: '🇸🇳' },
+  { code: '+381', name: 'Serbia',                   flag: '🇷🇸' },
+  { code: '+248', name: 'Seychelles',               flag: '🇸🇨' },
+  { code: '+232', name: 'Sierra Leone',             flag: '🇸🇱' },
+  { code: '+65',  name: 'Singapore',                flag: '🇸🇬' },
+  { code: '+421', name: 'Slovakia',                 flag: '🇸🇰' },
+  { code: '+386', name: 'Slovenia',                 flag: '🇸🇮' },
+  { code: '+677', name: 'Solomon Islands',          flag: '🇸🇧' },
+  { code: '+252', name: 'Somalia',                  flag: '🇸🇴' },
+  { code: '+27',  name: 'South Africa',             flag: '🇿🇦' },
+  { code: '+82',  name: 'South Korea',              flag: '🇰🇷' },
+  { code: '+211', name: 'South Sudan',              flag: '🇸🇸' },
+  { code: '+34',  name: 'Spain',                    flag: '🇪🇸' },
+  { code: '+94',  name: 'Sri Lanka',                flag: '🇱🇰' },
+  { code: '+249', name: 'Sudan',                    flag: '🇸🇩' },
+  { code: '+597', name: 'Suriname',                 flag: '🇸🇷' },
+  { code: '+46',  name: 'Sweden',                   flag: '🇸🇪' },
+  { code: '+41',  name: 'Switzerland',              flag: '🇨🇭' },
+  { code: '+963', name: 'Syria',                    flag: '🇸🇾' },
+  { code: '+886', name: 'Taiwan',                   flag: '🇹🇼' },
+  { code: '+992', name: 'Tajikistan',                flag: '🇹🇯' },
+  { code: '+255', name: 'Tanzania',                 flag: '🇹🇿' },
+  { code: '+66',  name: 'Thailand',                 flag: '🇹🇭' },
+  { code: '+670', name: 'Timor-Leste',               flag: '🇹🇱' },
+  { code: '+228', name: 'Togo',                     flag: '🇹🇬' },
+  { code: '+676', name: 'Tonga',                    flag: '🇹🇴' },
+  { code: '+1',   name: 'Trinidad and Tobago',      flag: '🇹🇹' },
+  { code: '+216', name: 'Tunisia',                  flag: '🇹🇳' },
+  { code: '+90',  name: 'Turkey',                   flag: '🇹🇷' },
+  { code: '+993', name: 'Turkmenistan',              flag: '🇹🇲' },
+  { code: '+688', name: 'Tuvalu',                   flag: '🇹🇻' },
+  { code: '+256', name: 'Uganda',                   flag: '🇺🇬' },
+  { code: '+380', name: 'Ukraine',                  flag: '🇺🇦' },
+  { code: '+971', name: 'United Arab Emirates',     flag: '🇦🇪' },
+  { code: '+44',  name: 'United Kingdom',           flag: '🇬🇧' },
+  { code: '+1',   name: 'United States',            flag: '🇺🇸' },
+  { code: '+598', name: 'Uruguay',                  flag: '🇺🇾' },
+  { code: '+998', name: 'Uzbekistan',                flag: '🇺🇿' },
+  { code: '+678', name: 'Vanuatu',                  flag: '🇻🇺' },
+  { code: '+379', name: 'Vatican City',              flag: '🇻🇦' },
+  { code: '+58',  name: 'Venezuela',                flag: '🇻🇪' },
+  { code: '+84',  name: 'Vietnam',                  flag: '🇻🇳' },
+  { code: '+967', name: 'Yemen',                    flag: '🇾🇪' },
+  { code: '+260', name: 'Zambia',                   flag: '🇿🇲' },
+  { code: '+263', name: 'Zimbabwe',                 flag: '🇿🇼' },
+]
+
 export default function RegisterClient() {
-  const { login } = useAuth()
   const navigate = useNavigate()
+  const { login } = useAuth()
 
+  const [countryCode, setCountryCode] = useState('+965')
   const [form, setForm] = useState({
-    first_name: '',
-    last_name: '',
-    email: '',
-    country_code: '+1',
+    full_name:    '',
+    email:        '',
     phone_number: '',
-    password: '',
-    confirm_password: '',
+    course:       '',
   })
+  const [errors, setErrors]     = useState({})
+  const [submitting, setSubmitting] = useState(false)
+  const [generalError, setGeneralError] = useState('')
 
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  const countryCodes = [
-    { code: '+1',   label: '🇺🇸 +1   (USA/Canada)' },
-    { code: '+44',  label: '🇬🇧 +44  (UK)' },
-    { code: '+61',  label: '🇦🇺 +61  (Australia)' },
-    { code: '+971', label: '🇦🇪 +971 (UAE)' },
-    { code: '+965', label: '🇰🇼 +965 (Kuwait)' },
-    { code: '+966', label: '🇸🇦 +966 (Saudi Arabia)' },
-    { code: '+974', label: '🇶🇦 +974 (Qatar)' },
-    { code: '+973', label: '🇧🇭 +973 (Bahrain)' },
-    { code: '+968', label: '🇴🇲 +968 (Oman)' },
-    { code: '+254', label: '🇰🇪 +254 (Kenya)' },
-    { code: '+234', label: '🇳🇬 +234 (Nigeria)' },
-    { code: '+27',  label: '🇿🇦 +27  (South Africa)' },
-    { code: '+91',  label: '🇮🇳 +91  (India)' },
-    { code: '+92',  label: '🇵🇰 +92  (Pakistan)' },
-    { code: '+880', label: '🇧🇩 +880 (Bangladesh)' },
-    { code: '+94',  label: '🇱🇰 +94  (Sri Lanka)' },
-    { code: '+60',  label: '🇲🇾 +60  (Malaysia)' },
-    { code: '+63',  label: '🇵🇭 +63  (Philippines)' },
-    { code: '+62',  label: '🇮🇩 +62  (Indonesia)' },
-    { code: '+20',  label: '🇪🇬 +20  (Egypt)' },
-    { code: '+212', label: '🇲🇦 +212 (Morocco)' },
-    { code: '+213', label: '🇩🇿 +213 (Algeria)' },
-    { code: '+216', label: '🇹🇳 +216 (Tunisia)' },
-    { code: '+249', label: '🇸🇩 +249 (Sudan)' },
-    { code: '+255', label: '🇹🇿 +255 (Tanzania)' },
-    { code: '+256', label: '🇺🇬 +256 (Uganda)' },
-    { code: '+49',  label: '🇩🇪 +49  (Germany)' },
-    { code: '+33',  label: '🇫🇷 +33  (France)' },
-    { code: '+34',  label: '🇪🇸 +34  (Spain)' },
-    { code: '+39',  label: '🇮🇹 +39  (Italy)' },
-    { code: '+31',  label: '🇳🇱 +31  (Netherlands)' },
-    { code: '+46',  label: '🇸🇪 +46  (Sweden)' },
-    { code: '+47',  label: '🇳🇴 +47  (Norway)' },
-    { code: '+45',  label: '🇩🇰 +45  (Denmark)' },
-    { code: '+353', label: '🇮🇪 +353 (Ireland)' },
-    { code: '+64',  label: '🇳🇿 +64  (New Zealand)' },
-    { code: '+55',  label: '🇧🇷 +55  (Brazil)' },
-    { code: '+52',  label: '🇲🇽 +52  (Mexico)' },
-    { code: '+54',  label: '🇦🇷 +54  (Argentina)' },
-    { code: '+57',  label: '🇨🇴 +57  (Colombia)' },
-    { code: '+86',  label: '🇨🇳 +86  (China)' },
-    { code: '+81',  label: '🇯🇵 +81  (Japan)' },
-    { code: '+82',  label: '🇰🇷 +82  (South Korea)' },
-    { code: '+7',   label: '🇷🇺 +7   (Russia)' },
-    { code: '+90',  label: '🇹🇷 +90  (Turkey)' },
-    { code: '+964', label: '🇮🇶 +964 (Iraq)' },
-    { code: '+962', label: '🇯🇴 +962 (Jordan)' },
-    { code: '+961', label: '🇱🇧 +961 (Lebanon)' },
-  ]
-
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value })
+  const update = (field) => (e) => {
+    setForm(prev => ({ ...prev, [field]: e.target.value }))
+    if (errors[field]) setErrors(prev => ({ ...prev, [field]: null }))
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setError('')
+    setGeneralError('')
+    setErrors({})
 
-    if (form.password !== form.confirm_password) {
-      setError('Passwords do not match')
+    if (!form.full_name.trim() || !form.email.trim() || !form.phone_number.trim()) {
+      setGeneralError('Full name, email, and phone number are required.')
       return
     }
 
-    setLoading(true)
+    const fullPhoneNumber = countryCode + form.phone_number.trim().replace(/^0+/, '')
+
+    setSubmitting(true)
     try {
-      const res = await api.post('/accounts/register/client/', {
-        first_name:   form.first_name,
-        last_name:    form.last_name,
-        email:        form.email,
-        phone_number: `${form.country_code}${form.phone_number}`,
-        password:     form.password,
-        password2:    form.confirm_password,
-      })
-
-      login(res.data.user, res.data.access, res.data.refresh)
-      navigate('/chat/lobby')
-
+      const res = await api.post('/accounts/signup/client/', { ...form, phone_number: fullPhoneNumber })
+      const { user, access, refresh, room_id } = res.data
+      login(user, access, refresh)
+      navigate(`/chat/${room_id}`, { replace: true })
     } catch (err) {
-      const errors = err.response?.data
-      if (errors && typeof errors === 'object') {
-        const firstError = Object.values(errors)[0]
-        setError(Array.isArray(firstError) ? firstError[0] : firstError)
+      const data = err.response?.data
+      if (data && typeof data === 'object') {
+        setErrors(data)
+        if (!Object.keys(data).length) setGeneralError('Something went wrong. Please try again.')
       } else {
-        setError('Registration failed. Please try again.')
+        setGeneralError('Something went wrong. Please try again.')
       }
     } finally {
-      setLoading(false)
+      setSubmitting(false)
     }
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
+    <div style={S.page}>
+      <div style={S.card}>
+        <div style={S.brandMark}>TJ</div>
+        <h1 style={S.title}>Welcome to TutorJamesConnect</h1>
+        <p style={S.subtitle}>
+          A few details and you're in — no password to remember.
+        </p>
 
-        <div style={styles.header}>
-          <h1 style={styles.title}>TutorJamesConnect</h1>
-          <p style={styles.subtitle}>
-            Trusted by students across the globe for projects, assignments, and academic excellence.
-          </p>
-        </div>
+        <form onSubmit={handleSubmit} style={S.form}>
+          <Field label="Full name" error={errors.full_name}>
+            <input
+              style={S.input}
+              value={form.full_name}
+              onChange={update('full_name')}
+              placeholder="e.g. Khaled Abdulaziz"
+              disabled={submitting}
+            />
+          </Field>
 
-        <h2 style={styles.formTitle}>Create Client Account</h2>
+          <Field label="Email" error={errors.email}>
+            <input
+              type="email"
+              style={S.input}
+              value={form.email}
+              onChange={update('email')}
+              placeholder="you@example.com"
+              disabled={submitting}
+            />
+          </Field>
 
-        {error && <div style={styles.error}>{error}</div>}
-
-        <form onSubmit={handleSubmit}>
-          <div style={styles.row}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>First Name</label>
-              <input style={styles.input} type="text" name="first_name"
-                placeholder="First name" value={form.first_name}
-                onChange={handleChange} required />
-            </div>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Last Name</label>
-              <input style={styles.input} type="text" name="last_name"
-                placeholder="Last name" value={form.last_name}
-                onChange={handleChange} required />
-            </div>
-          </div>
-
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Email Address</label>
-            <input style={styles.input} type="email" name="email"
-              placeholder="your@email.com" value={form.email}
-              onChange={handleChange} required />
-          </div>
-
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Phone Number</label>
-            <div style={styles.phoneRow}>
-              <select style={styles.countrySelect} name="country_code"
-                value={form.country_code} onChange={handleChange}>
-                {countryCodes.map((c) => (
-                  <option key={c.code} value={c.code}>{c.label}</option>
+          <Field label="Phone number" error={errors.phone_number}>
+            <div style={S.phoneRow}>
+              <select
+                style={S.countrySelect}
+                value={countryCode}
+                onChange={e => setCountryCode(e.target.value)}
+                disabled={submitting}
+              >
+                {COUNTRY_CODES.map(c => (
+                  <option key={c.name} value={c.code}>{c.flag} {c.name} ({c.code})</option>
                 ))}
               </select>
-              <input style={styles.phoneInput} type="tel" name="phone_number"
-                placeholder="XXXX XXXX" value={form.phone_number}
-                onChange={handleChange} required />
+              <input
+                style={S.phoneInput}
+                value={form.phone_number}
+                onChange={update('phone_number')}
+                placeholder="51234567"
+                disabled={submitting}
+              />
             </div>
-          </div>
+          </Field>
 
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Password</label>
-            <input style={styles.input} type="password" name="password"
-              placeholder="Create a strong password" value={form.password}
-              onChange={handleChange} required />
-          </div>
+          <Field label="Course (optional)" error={errors.course}>
+            <input
+              style={S.input}
+              value={form.course}
+              onChange={update('course')}
+              placeholder="e.g. BSc Computer Science"
+              disabled={submitting}
+            />
+          </Field>
 
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Confirm Password</label>
-            <input style={styles.input} type="password" name="confirm_password"
-              placeholder="Repeat your password" value={form.confirm_password}
-              onChange={handleChange} required />
-          </div>
+          {generalError && <div style={S.generalError}>{generalError}</div>}
 
-          <button style={loading ? styles.btnDisabled : styles.btn}
-            type="submit" disabled={loading}>
-            {loading ? 'Creating account...' : 'Create Account'}
+          <button type="submit" style={{ ...S.submitBtn, opacity: submitting ? 0.7 : 1 }} disabled={submitting}>
+            {submitting ? 'Setting up your room…' : 'Get Started'}
           </button>
         </form>
 
-        <p style={styles.switchText}>
-          Are you a tutor?{' '}
-          <Link to="/register/provider" style={styles.link}>
-            Register as Provider
-          </Link>
-        </p>
-
+        <div style={S.footer}>
+          <span style={S.footerText}>Already have an account? </span>
+          <Link to="/login" style={S.footerLink}>Log in</Link>
+        </div>
+        <div style={S.footer}>
+          <span style={S.footerText}>Lost access to your room? </span>
+          <Link to="/lost-access" style={S.footerLink}>Get a new link</Link>
+        </div>
       </div>
     </div>
   )
 }
 
-const styles = {
-  container: {
-    minHeight: '100vh',
-    background: 'linear-gradient(135deg, #1a56a0 0%, #0d3b6e 100%)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '20px',
+function Field({ label, error, children }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <label style={S.label}>{label}</label>
+      {children}
+      {error && <div style={S.fieldError}>{Array.isArray(error) ? error[0] : error}</div>}
+    </div>
+  )
+}
+
+const S = {
+  page: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    minHeight: '100vh', background: 'linear-gradient(135deg, #1a56a0, #0d3b6e)',
+    fontFamily: "'Segoe UI', Helvetica, Arial, sans-serif", padding: 20,
   },
   card: {
-    background: '#ffffff',
-    borderRadius: '16px',
-    padding: '40px',
-    width: '100%',
-    maxWidth: '480px',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+    background: '#fff', borderRadius: 16, padding: '40px 36px', width: '100%',
+    maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
   },
-  header: {
-    textAlign: 'center',
-    marginBottom: '24px',
-    padding: '16px',
-    background: 'linear-gradient(135deg, #1a56a0, #0d3b6e)',
-    borderRadius: '12px',
+  brandMark: {
+    width: 48, height: 48, borderRadius: 12, background: '#1a56a0', color: '#fff',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontWeight: 800, fontSize: 18, marginBottom: 20,
   },
-  title: {
-    color: '#ffffff',
-    fontSize: '26px',
-    fontWeight: '700',
-    margin: '0 0 8px 0',
-  },
-  subtitle: {
-    color: '#BDD7F5',
-    fontSize: '13px',
-    margin: 0,
-    lineHeight: '1.5',
-  },
-  formTitle: {
-    fontSize: '20px',
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: '20px',
-  },
-  error: {
-    background: '#fae6e6',
-    color: '#a0251a',
-    padding: '10px 14px',
-    borderRadius: '8px',
-    fontSize: '14px',
-    marginBottom: '16px',
-  },
-  row: { display: 'flex', gap: '12px' },
-  inputGroup: { flex: 1, marginBottom: '16px' },
-  label: {
-    display: 'block',
-    fontSize: '13px',
-    fontWeight: '500',
-    color: '#444',
-    marginBottom: '6px',
-  },
+  title:    { fontSize: 22, fontWeight: 700, color: '#1a1a1a', margin: '0 0 6px' },
+  subtitle: { fontSize: 14, color: '#888', margin: '0 0 28px' },
+  form:     { display: 'flex', flexDirection: 'column' },
+  label:    { display: 'block', fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 6 },
   input: {
-    width: '100%',
-    padding: '10px 12px',
-    borderRadius: '8px',
-    border: '1.5px solid #ddd',
-    fontSize: '14px',
-    outline: 'none',
-    boxSizing: 'border-box',
+    width: '100%', padding: '11px 13px', borderRadius: 9, border: '1.5px solid #ddd',
+    fontSize: 14, outline: 'none', boxSizing: 'border-box',
   },
-  phoneRow: {
-    display: 'flex',
-    gap: '8px',
-  },
+  phoneRow: { display: 'flex', gap: 8 },
   countrySelect: {
-    padding: '10px 8px',
-    borderRadius: '8px',
-    border: '1.5px solid #ddd',
-    fontSize: '13px',
-    outline: 'none',
-    background: '#f9f9f9',
-    cursor: 'pointer',
-    width: '200px',
-    flexShrink: 0,
+    flexShrink: 0, width: 130, padding: '11px 8px', borderRadius: 9, border: '1.5px solid #ddd',
+    fontSize: 13, outline: 'none', background: '#fff', cursor: 'pointer',
   },
   phoneInput: {
-    flex: 1,
-    padding: '10px 12px',
-    borderRadius: '8px',
-    border: '1.5px solid #ddd',
-    fontSize: '14px',
-    outline: 'none',
-    boxSizing: 'border-box',
+    flex: 1, padding: '11px 13px', borderRadius: 9, border: '1.5px solid #ddd',
+    fontSize: 14, outline: 'none', boxSizing: 'border-box', minWidth: 0,
   },
-  btn: {
-    width: '100%',
-    padding: '12px',
-    background: 'linear-gradient(135deg, #1a56a0, #0d3b6e)',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '15px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    marginTop: '8px',
+  fieldError:   { fontSize: 12, color: '#e53e3e', marginTop: 5 },
+  generalError: {
+    fontSize: 13, color: '#e53e3e', background: '#fae6e6', borderRadius: 8,
+    padding: '10px 12px', marginBottom: 16,
   },
-  btnDisabled: {
-    width: '100%',
-    padding: '12px',
-    background: '#aaa',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '15px',
-    fontWeight: '600',
-    cursor: 'not-allowed',
-    marginTop: '8px',
+  submitBtn: {
+    padding: '13px', borderRadius: 10, border: 'none', cursor: 'pointer',
+    background: 'linear-gradient(135deg, #1a56a0, #0d3b6e)', color: '#fff',
+    fontSize: 15, fontWeight: 700, marginTop: 6,
   },
-  switchText: {
-    textAlign: 'center',
-    fontSize: '13px',
-    color: '#666',
-    marginTop: '20px',
-  },
-  link: {
-    color: '#1a56a0',
-    fontWeight: '600',
-    textDecoration: 'none',
-  },
+  footer:     { textAlign: 'center', marginTop: 14, fontSize: 13 },
+  footerText: { color: '#888' },
+  footerLink: { color: '#1a56a0', fontWeight: 600, textDecoration: 'none' },
 }
+
