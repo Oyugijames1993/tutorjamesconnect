@@ -90,14 +90,23 @@ class RequestAccessView(APIView):
 
     def post(self, request):
         phone_number = request.data.get('phone_number', '').strip()
+        role         = request.data.get('role', 'client').strip()
+
         if not phone_number:
             return Response({'error': 'Phone number is required.'}, status=400)
+        if role not in ('client', 'provider'):
+            role = 'client'
 
-        try:
-            user = CustomUser.objects.get(phone_number=phone_number, role='client')
+        # Phone numbers are only guaranteed unique among clients — a
+        # provider could share a number with a client (or, in principle,
+        # with another provider). Asking which role the requester is
+        # resolves that ambiguity instead of guessing. If more than one
+        # account still matches, a token is created for each; admin's
+        # pending-requests list shows each one by name so it's obvious
+        # which is which.
+        matches = CustomUser.objects.filter(phone_number=phone_number, role=role)
+        for user in matches:
             RoomAccessToken.objects.create(user=user)
-        except CustomUser.DoesNotExist:
-            pass
 
         return Response({
             'message': 'If this number is registered, an access request has been sent to the admin.'
@@ -121,6 +130,7 @@ class PendingAccessRequestsView(APIView):
             {
                 'id':           t.id,
                 'user_display': t.user.display_name,
+                'role':         t.user.role,
                 'phone_number': t.user.phone_number,
                 'is_valid':     t.is_valid(),
                 'created_at':   t.created_at,
@@ -149,10 +159,22 @@ class RedeemAccessTokenView(APIView):
         token.save()
 
         tokens = get_tokens_for_user(token.user)
+
+        # Clients have exactly one permanent room — hand it straight to the
+        # frontend so it can route there directly. Providers can be in
+        # several (or none), so there's no single "their room" to name;
+        # the frontend sends them to the general chat view instead.
+        room_id = None
+        if token.user.role == 'client':
+            from chat.models import ChatRoom
+            room = ChatRoom.objects.filter(client=token.user).first()
+            room_id = room.id if room else None
+
         return Response({
             'user':    UserSerializer(token.user).data,
             'access':  tokens['access'],
             'refresh': tokens['refresh'],
+            'room_id': room_id,
             'message': 'Welcome back!',
         })
 

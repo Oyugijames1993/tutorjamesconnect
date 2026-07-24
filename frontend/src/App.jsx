@@ -1,7 +1,8 @@
-// src/App.jsx
 import { Routes, Route, Navigate } from 'react-router-dom'
 import RegisterClient from './pages/RegisterClient'
 import RegisterProvider from './pages/RegisterProvider'
+import LostAccess from './pages/LostAccess'
+import RedeemAccess from './pages/RedeemAccess'
 import Login from './pages/Login'
 import ChatRoom from './pages/ChatRoom'
 import AdminDashboard from './pages/AdminDashboard'
@@ -32,7 +33,13 @@ function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/register/client" element={<RegisterClient />} />
       <Route path="/register/provider" element={<RegisterProvider />} />
+      <Route path="/lost-access" element={<LostAccess />} />
+      <Route path="/access/:token" element={<RedeemAccess />} />
       <Route path="/no-rooms" element={user ? <NoRooms /> : <Navigate to="/login" replace />} />
+      <Route
+        path="/chat"
+        element={user ? <ChatRoom /> : <Navigate to="/login" replace />}
+      />
       <Route
         path="/chat/:roomId"
         element={user ? <ChatRoom /> : <Navigate to="/login" replace />}
@@ -46,3 +53,4 @@ function App() {
 }
 
 export default App
+

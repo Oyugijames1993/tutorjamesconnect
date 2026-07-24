@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import ChatWebSocket from '../services/websocket'
 import api from '../services/api'
 import useNotificationSound, { SOUND_PROFILES } from '../hooks/useNotificationSound'
@@ -44,6 +44,7 @@ const C = {
 export default function ChatRoom() {
   const { user, logout } = useAuth()
   const { roomId }       = useParams()
+  const navigate         = useNavigate()
   const isAdmin          = user?.role === 'admin'
   const isProvider       = user?.role === 'provider'
 
@@ -112,6 +113,8 @@ export default function ChatRoom() {
       if (res.data.length > 0) {
         const room = roomId ? res.data.find(r => r.id === parseInt(roomId)) || res.data[0] : res.data[0]
         setActiveRoom(room)
+      } else {
+        navigate('/no-rooms', { replace: true })
       }
     }).catch(err => console.error('Failed to load rooms:', err))
   }, [])
@@ -1012,3 +1015,4 @@ const S = {
   pendCard:     { background: '#fef6e0', border: '1px solid #f0dca0', borderRadius: 9, padding: '9px 11px', marginBottom: 7 },
   closeRoomBtn: { width: '100%', padding: '8px', border: '1px solid #feb2b2', borderRadius: 20, background: '#fff5f5', color: '#e53e3e', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'inherit' },
 }
+
