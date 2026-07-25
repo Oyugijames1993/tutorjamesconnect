@@ -16,10 +16,6 @@ export default function RegisterProvider() {
     phone_number: '',
     specialisation: '',
     bio: '',
-    rate_min: '',
-    rate_max: '',
-    password: '',
-    confirm_password: '',
   })
 
   const [error, setError] = useState('')
@@ -83,29 +79,20 @@ export default function RegisterProvider() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-
-    if (form.password !== form.confirm_password) {
-      setError('Passwords do not match')
-      return
-    }
-
     setLoading(true)
     try {
-      const res = await api.post('/accounts/register/provider/', {
-        first_name:     form.first_name,
-        last_name:      form.last_name,
+      const res = await api.post('/accounts/signup/provider/', {
+        full_name:      `${form.first_name} ${form.last_name}`.trim(),
         email:          form.email,
-        phone_number:   `${form.country_code}${form.phone_number}`,
+        phone_number:   `${form.country_code}${form.phone_number.replace(/^0+/, '')}`,
         specialisation: form.specialisation,
         bio:            form.bio,
-        rate_min:       form.rate_min,
-        rate_max:       form.rate_max,
-        password:       form.password,
-        password2:      form.confirm_password,
       })
 
       login(res.data.user, res.data.access, res.data.refresh)
-      navigate('/chat/lobby')
+      // No specific room yet — /chat sorts out where a provider lands,
+      // including /no-rooms if admin hasn't assigned them anywhere yet.
+      navigate('/chat', { replace: true })
 
     } catch (err) {
       const errors = err.response?.data
@@ -132,6 +119,9 @@ export default function RegisterProvider() {
         </div>
 
         <h2 style={styles.formTitle}>Create Provider Account</h2>
+        <p style={styles.formSubtitle}>
+          No password needed — you'll stay signed in on this device.
+        </p>
 
         {error && <div style={styles.error}>{error}</div>}
 
@@ -187,35 +177,6 @@ export default function RegisterProvider() {
               value={form.bio} onChange={handleChange} required rows={3} />
           </div>
 
-          <div style={styles.row}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Min Rate (Ksh./page)</label>
-              <input style={styles.input} type="number" name="rate_min"
-                placeholder="100" value={form.rate_min}
-                onChange={handleChange} required />
-            </div>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Max Rate (Ksh./page)</label>
-              <input style={styles.input} type="number" name="rate_max"
-                placeholder="500" value={form.rate_max}
-                onChange={handleChange} required />
-            </div>
-          </div>
-
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Password</label>
-            <input style={styles.input} type="password" name="password"
-              placeholder="Create a strong password" value={form.password}
-              onChange={handleChange} required />
-          </div>
-
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Confirm Password</label>
-            <input style={styles.input} type="password" name="confirm_password"
-              placeholder="Repeat your password" value={form.confirm_password}
-              onChange={handleChange} required />
-          </div>
-
           <button style={loading ? styles.btnDisabled : styles.btn}
             type="submit" disabled={loading}>
             {loading ? 'Creating account...' : 'Create Provider Account'}
@@ -226,6 +187,12 @@ export default function RegisterProvider() {
           Looking for a tutor?{' '}
           <Link to="/register/client" style={styles.link}>
             Register as Client
+          </Link>
+        </p>
+        <p style={styles.switchText}>
+          Already registered?{' '}
+          <Link to="/lost-access" style={styles.link}>
+            Lost access? Get a new link
           </Link>
         </p>
 
@@ -274,6 +241,11 @@ const styles = {
     fontSize: '20px',
     fontWeight: '600',
     color: '#1a1a1a',
+    marginBottom: '4px',
+  },
+  formSubtitle: {
+    fontSize: '13px',
+    color: '#888',
     marginBottom: '20px',
   },
   error: {
@@ -365,7 +337,7 @@ const styles = {
     textAlign: 'center',
     fontSize: '13px',
     color: '#666',
-    marginTop: '20px',
+    marginTop: '10px',
   },
   link: {
     color: '#1a7a4a',

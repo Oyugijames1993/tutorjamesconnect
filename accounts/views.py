@@ -14,6 +14,7 @@ from .serializers import (
     ClientRegisterSerializer,
     ProviderRegisterSerializer,
     ClientSignupSerializer,
+    ProviderSignupSerializer,
 )
 
 
@@ -75,6 +76,30 @@ class ClientSignupView(APIView):
                 'access':  tokens['access'],
                 'refresh': tokens['refresh'],
                 'message': 'Welcome to TutorJamesConnect!',
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+# ── Passwordless provider signup ──────────────────────────────────────────
+# No auto-created room — providers get manually added to whichever rooms
+# need them by admin, after reviewing their profile. Otherwise identical
+# philosophy to ClientSignupView: no password, logged straight in.
+class ProviderSignupView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = ProviderSignupSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+
+        tokens = get_tokens_for_user(user)
+        return Response(
+            {
+                'user':    UserSerializer(user).data,
+                'access':  tokens['access'],
+                'refresh': tokens['refresh'],
+                'message': 'Welcome to TutorJamesConnect! Your profile is ready for admin to review.',
             },
             status=status.HTTP_201_CREATED,
         )
@@ -299,4 +324,5 @@ class LogoutView(APIView):
                 {'error': 'Invalid token.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
 

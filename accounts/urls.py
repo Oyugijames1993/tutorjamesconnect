@@ -10,6 +10,7 @@ from .views import (
     VerifyOTPView,
     LogoutView,
     ClientSignupView,
+    ProviderSignupView,
     RequestAccessView,
     PendingAccessRequestsView,
     RedeemAccessTokenView,
@@ -20,10 +21,11 @@ urlpatterns = [
     path('register/client/',   ClientRegisterView.as_view(),   name='register-client'),
     path('register/provider/', ProviderRegisterView.as_view(), name='register-provider'),
 
-    # New frictionless client signup — phone, email, full name, course.
-    # No password. Creates the account + their permanent room in one step
-    # and logs them straight in.
-    path('signup/client/', ClientSignupView.as_view(), name='signup-client'),
+    # New frictionless signup — phone, email, full name, and role-specific
+    # details. No password. Client signup also creates their permanent
+    # room; provider signup does not (admin assigns them manually).
+    path('signup/client/',   ClientSignupView.as_view(),   name='signup-client'),
+    path('signup/provider/', ProviderSignupView.as_view(), name='signup-provider'),
 
     # Lost-access recovery — client requests a link by phone number, admin
     # sees it and sends it manually over WhatsApp.
@@ -48,4 +50,5 @@ urlpatterns = [
     path('me/',    MeView.as_view(),       name='me'),
     path('users/', UserListView.as_view(), name='user-list'),
 ]
+
 

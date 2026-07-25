@@ -144,3 +144,55 @@ class ClientSignupSerializer(serializers.Serializer):
         user.save()
         return user
 
+
+class ProviderSignupSerializer(serializers.Serializer):
+    """
+    Passwordless provider signup — same philosophy as ClientSignupSerializer.
+    Providers don't get an auto-created room (admin adds them to whichever
+    rooms need them, manually, after reviewing their profile); this just
+    creates the account + their ProviderProfile.
+
+    Rate range isn't collected at signup — ProviderProfile defaults both
+    to 0, and admin can set real figures later once rates are actually
+    negotiated (rate range was originally part of this flow; dropped per
+    request since pricing isn't something a provider should be setting
+    for themselves up front).
+    """
+    full_name      = serializers.CharField(max_length=150)
+    email          = serializers.EmailField()
+    phone_number   = serializers.CharField(max_length=20)
+    specialisation = serializers.CharField(max_length=200)
+    bio            = serializers.CharField()
+    portfolio_url  = serializers.URLField(required=False, allow_blank=True)
+
+    def validate_email(self, value):
+        if CustomUser.objects.filter(email=value).exists():
+            raise serializers.ValidationError('This email is already registered.')
+        return value
+
+    def validate_phone_number(self, value):
+        if CustomUser.objects.filter(phone_number=value, role='provider').exists():
+            raise serializers.ValidationError(
+                'This phone number is already registered. Use "Lost access?" to get back in.'
+            )
+        return value
+
+    def create(self, validated_data):
+        user = CustomUser(
+            username     = validated_data['email'],
+            email        = validated_data['email'],
+            first_name   = validated_data['full_name'],
+            phone_number = validated_data['phone_number'],
+            role         = 'provider',
+        )
+        user.set_unusable_password()
+        user.save()
+
+        ProviderProfile.objects.create(
+            user           = user,
+            specialisation = validated_data['specialisation'],
+            bio            = validated_data['bio'],
+            portfolio_url  = validated_data.get('portfolio_url', ''),
+        )
+        return user
+
