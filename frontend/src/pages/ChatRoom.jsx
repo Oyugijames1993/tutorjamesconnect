@@ -114,7 +114,7 @@ export default function ChatRoom() {
         const room = roomId ? res.data.find(r => r.id === parseInt(roomId)) || res.data[0] : res.data[0]
         setActiveRoom(room)
       } else {
-        navigate('/no-rooms', { replace: true })
+        navigate('/dashboard', { replace: true })
       }
     }).catch(err => console.error('Failed to load rooms:', err))
   }, [])
@@ -1015,4 +1015,5 @@ const S = {
   pendCard:     { background: '#fef6e0', border: '1px solid #f0dca0', borderRadius: 9, padding: '9px 11px', marginBottom: 7 },
   closeRoomBtn: { width: '100%', padding: '8px', border: '1px solid #feb2b2', borderRadius: 20, background: '#fff5f5', color: '#e53e3e', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'inherit' },
 }
+
 

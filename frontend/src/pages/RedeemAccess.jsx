@@ -29,10 +29,10 @@ export default function RedeemAccess() {
         } else if (user.role === 'admin') {
           navigate('/admin', { replace: true })
         } else {
-          // Provider (or a client somehow without a room yet) — let the
-          // general chat view sort out where they land, including
-          // redirecting to /no-rooms if they truly have none right now.
-          navigate('/chat', { replace: true })
+          // Provider (or a client somehow without a room yet) — the
+          // dashboard shows their current room list live, and updates
+          // automatically if admin assigns them somewhere new.
+          navigate('/dashboard', { replace: true })
         }
       })
       .catch(err => {
@@ -102,3 +102,4 @@ if (typeof document !== 'undefined' && !document.getElementById('redeem-access-k
   style.textContent = '@keyframes redeemSpin { to { transform: rotate(360deg); } }'
   document.head.appendChild(style)
 }
+

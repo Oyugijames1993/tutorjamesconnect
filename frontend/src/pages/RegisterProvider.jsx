@@ -90,9 +90,9 @@ export default function RegisterProvider() {
       })
 
       login(res.data.user, res.data.access, res.data.refresh)
-      // No specific room yet — /chat sorts out where a provider lands,
-      // including /no-rooms if admin hasn't assigned them anywhere yet.
-      navigate('/chat', { replace: true })
+      // Providers don't get a room at signup — land them on their live
+      // dashboard, which will pick up any room the moment admin assigns one.
+      navigate('/dashboard', { replace: true })
 
     } catch (err) {
       const errors = err.response?.data
