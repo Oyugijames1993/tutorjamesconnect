@@ -241,6 +241,15 @@ class InviteProviderView(APIView):
             status = 'sent',
         )
 
+        from accounts.push import send_push_to_user
+        send_push_to_user(
+            provider,
+            title='Added to a new room',
+            body=f'You\'ve been added to "{room.name}"',
+            sound_type='message',
+            url=f'/chat/{room.id}',
+        )
+
         return Response(
             ChatRoomSerializer(room).data,
             status=status.HTTP_200_OK,

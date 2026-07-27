@@ -8,7 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils import timezone
-from .models import CustomUser, OTP, RoomAccessToken
+from .models import CustomUser, OTP, RoomAccessToken, PushSubscription
 from .serializers import (
     UserSerializer,
     ClientRegisterSerializer,
@@ -24,6 +24,45 @@ def get_tokens_for_user(user):
         'refresh': str(refresh),
         'access':  str(refresh.access_token),
     }
+
+
+# ── Web Push: give the frontend the public key it needs to subscribe ────────
+class VapidPublicKeyView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response({'public_key': settings.VAPID_PUBLIC_KEY})
+
+
+# ── Web Push: register a browser/device to receive notifications ────────────
+class SubscribePushView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        endpoint = request.data.get('endpoint')
+        keys     = request.data.get('keys', {})
+        p256dh   = keys.get('p256dh')
+        auth     = keys.get('auth')
+
+        if not (endpoint and p256dh and auth):
+            return Response({'error': 'Malformed subscription.'}, status=400)
+
+        PushSubscription.objects.update_or_create(
+            endpoint=endpoint,
+            defaults={'user': request.user, 'p256dh': p256dh, 'auth': auth},
+        )
+        return Response({'detail': 'Subscribed.'}, status=201)
+
+
+# ── Web Push: stop notifying a specific browser/device ───────────────────────
+class UnsubscribePushView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        endpoint = request.data.get('endpoint')
+        if endpoint:
+            PushSubscription.objects.filter(user=request.user, endpoint=endpoint).delete()
+        return Response({'detail': 'Unsubscribed.'})
 
 
 # ── Client Registration ──────────────────────────────────────────────────────
@@ -324,5 +363,3 @@ class LogoutView(APIView):
                 {'error': 'Invalid token.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-

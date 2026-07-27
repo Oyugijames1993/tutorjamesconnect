@@ -4,6 +4,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import ChatWebSocket from '../services/websocket'
 import api from '../services/api'
 import useNotificationSound, { SOUND_PROFILES } from '../hooks/useNotificationSound'
+import usePushNotifications from '../hooks/usePushNotifications'
+import InstallBanner from '../components/InstallBanner'
 
 // ── Design Tokens — WhatsApp theme ────────────────────────────────────────────
 const C = {
@@ -84,6 +86,22 @@ export default function ChatRoom() {
   const [pendingSoundProfile, setPendingSoundProfile] = useState(() =>
     localStorage.getItem('tjc_pending_sound_profile') || 'ping')
   const { playSound } = useNotificationSound()
+  const { supported: pushSupported, permission: pushPermission, subscribed: pushSubscribed, enable: enablePush, disable: disablePush } = usePushNotifications()
+  const [pushBusy, setPushBusy] = useState(false)
+
+  const togglePush = async () => {
+    setPushBusy(true)
+    try {
+      if (pushSubscribed) {
+        await disablePush()
+      } else {
+        const res = await enablePush()
+        if (!res.ok) setError(res.reason || 'Could not enable notifications.')
+      }
+    } finally {
+      setPushBusy(false)
+    }
+  }
 
   const toggleSound = useCallback(() => {
     setSoundEnabled(prev => {
@@ -380,10 +398,12 @@ export default function ChatRoom() {
   )
 
   return (
-    <div style={S.app}>
-      <style>{css}</style>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <InstallBanner />
+      <div style={{ ...S.app, height: 'auto', flex: 1, minHeight: 0 }}>
+        <style>{css}</style>
 
-      {/* ═══ LEFT SIDEBAR ═══ */}
+        {/* ═══ LEFT SIDEBAR ═══ */}
       {showSidebar && (
         <aside style={S.sidebar}>
           {/* Brand header — teal strip at top only */}
@@ -497,6 +517,20 @@ export default function ChatRoom() {
                 : <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
               }
             </button>
+            {pushSupported && (
+              <button
+                className="tjc-icon"
+                style={{ ...S.iconBtn, color: pushSubscribed ? C.gold : S.iconBtn.color, opacity: pushBusy ? 0.5 : 1 }}
+                onClick={togglePush}
+                disabled={pushBusy}
+                title={pushSubscribed ? 'Notifications on for this device' : 'Enable notifications on this device'}
+              >
+                {pushSubscribed
+                  ? <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+                  : <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0 1 18 8"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.33-5"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                }
+              </button>
+            )}
           </div>
         </div>
 
@@ -859,6 +893,7 @@ export default function ChatRoom() {
           </div>
         </aside>
       )}
+      </div>
     </div>
   )
 }
@@ -1015,5 +1050,3 @@ const S = {
   pendCard:     { background: '#fef6e0', border: '1px solid #f0dca0', borderRadius: 9, padding: '9px 11px', marginBottom: 7 },
   closeRoomBtn: { width: '100%', padding: '8px', border: '1px solid #feb2b2', borderRadius: 20, background: '#fff5f5', color: '#e53e3e', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'inherit' },
 }
-
-

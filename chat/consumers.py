@@ -2,8 +2,10 @@ import json
 from collections import defaultdict
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
+from asgiref.sync import sync_to_async
 from .models import ChatRoom, Message, SharedFile
 from .moderation import moderate_message, ACTION_SEND, ACTION_HOLD, ACTION_BLOCK, ACTION_REDIRECT_ADMIN
+from accounts.push import send_push_to_users
 
 # ── In-memory presence tracking ───────────────────────────────────────────────
 # room_id -> { user_id: number_of_open_sockets }
@@ -147,6 +149,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'time':           msg.timestamp.strftime('%H:%M'),
                 }
             )
+            recipients = await self.get_push_recipients(room, 'admin', self.user.id)
+            await sync_to_async(send_push_to_users)(
+                recipients,
+                title=f'Private message — {room.name}',
+                body=f'{self.user.display_name}: {body[:100]}',
+                sound_type='pending',
+                url=f'/chat/{room.id}',
+            )
             return
 
         if action == ACTION_HOLD:
@@ -197,6 +207,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'time':           msg.timestamp.strftime('%H:%M'),
                 }
             )
+            recipients = await self.get_push_recipients(room, 'admin', self.user.id)
+            await sync_to_async(send_push_to_users)(
+                recipients,
+                title=f'Needs your approval — {room.name}',
+                body=f'{self.user.display_name}: {body[:100]}',
+                sound_type='pending',
+                url=f'/chat/{room.id}',
+            )
             return
 
         msg = await self.save_message(room, body, 'sent', '', target)
@@ -212,6 +230,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'target':         target,
                 'time':           msg.timestamp.strftime('%H:%M'),
             }
+        )
+        recipients = await self.get_push_recipients(room, target, self.user.id)
+        await sync_to_async(send_push_to_users)(
+            recipients,
+            title=(f'Private message — {room.name}' if target == 'admin' else f'{self.user.display_name} — {room.name}'),
+            body=body[:120],
+            sound_type=('pending' if target == 'admin' else 'message'),
+            url=f'/chat/{room.id}',
         )
 
     # ── Visibility helper ─────────────────────────────────────────────────────
@@ -391,6 +417,38 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'type': 'file:rejected',
             'id':   event['id'],
         }))
+
+    @database_sync_to_async
+    def get_push_recipients(self, room, target, sender_id):
+        """
+        Who should get a push notification for a message with this target,
+        excluding the sender themselves. Mirrors _can_see()'s visibility
+        rules: admin always sees everything, so admins are always included
+        (minus the sender, if the sender happens to be an admin).
+        """
+        from accounts.models import CustomUser
+
+        recipients = list(CustomUser.objects.filter(role='admin').exclude(id=sender_id))
+
+        def add_client_side():
+            if room.client_id and room.client_id != sender_id:
+                recipients.append(room.client)
+            recipients.extend(room.extra_clients.exclude(id=sender_id))
+
+        def add_provider_side():
+            recipients.extend(room.providers.exclude(id=sender_id))
+
+        if target == 'client':
+            add_client_side()
+        elif target == 'provider':
+            add_provider_side()
+        elif target == 'admin':
+            pass  # admins already included above
+        else:  # 'everyone'
+            add_client_side()
+            add_provider_side()
+
+        return recipients
 
     # ── Database helpers ──────────────────────────────────────────────────────
 

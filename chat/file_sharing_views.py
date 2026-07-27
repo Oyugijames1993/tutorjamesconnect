@@ -10,6 +10,7 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
 from .models import ChatRoom, SharedFile
+from accounts.push import send_push_to_user, send_push_to_users
 
 
 def _format_size(n_bytes):
@@ -35,6 +36,22 @@ def _is_room_member(room, user):
     if room.extra_clients.filter(id=user.id).exists():
         return True
     return False
+
+
+def _room_everyone(room, exclude_id=None):
+    """Everyone who can see an approved/direct file in this room: all
+    admins, the client, any extra clients, and any providers — minus
+    whoever the caller wants excluded (typically the person who just
+    acted, so they don't get notified about their own action)."""
+    from accounts.models import CustomUser
+    people = list(CustomUser.objects.filter(role='admin'))
+    if room.client_id:
+        people.append(room.client)
+    people.extend(room.extra_clients.all())
+    people.extend(room.providers.all())
+    if exclude_id is not None:
+        people = [p for p in people if p.id != exclude_id]
+    return people
 
 
 class UploadFileView(APIView):
@@ -107,6 +124,15 @@ class UploadFileView(APIView):
                 'time':      shared.uploaded_at.strftime('%H:%M'),
             })
 
+            from accounts.models import CustomUser
+            send_push_to_users(
+                CustomUser.objects.filter(role='admin').exclude(id=user.id),
+                title=f'File needs approval — {room.name}',
+                body=f'{user.display_name} uploaded {shared.file_name}',
+                sound_type='pending',
+                url=f'/chat/{room.id}',
+            )
+
             return Response({
                 'detail':  'File uploaded and pending admin approval.',
                 'file_id': shared.id,
@@ -123,6 +149,13 @@ class UploadFileView(APIView):
             'role':      user.role,
             'time':      shared.uploaded_at.strftime('%H:%M'),
         })
+        send_push_to_users(
+            _room_everyone(room, exclude_id=user.id),
+            title=f'{user.display_name} — {room.name}',
+            body=f'Shared a file: {shared.file_name}',
+            sound_type='message',
+            url=f'/chat/{room.id}',
+        )
         return Response({
             'detail':  'File shared.',
             'file_id': shared.id,
@@ -157,6 +190,13 @@ class ApproveFileView(APIView):
             'role':      shared.sender.role,
             'time':      shared.approved_at.strftime('%H:%M'),
         })
+        send_push_to_users(
+            _room_everyone(shared.room, exclude_id=request.user.id),
+            title=f'File approved — {shared.room.name}',
+            body=f'{shared.file_name} is now visible in the room',
+            sound_type='message',
+            url=f'/chat/{shared.room_id}',
+        )
 
         return Response({'detail': 'File approved and delivered to room.'})
 
@@ -184,9 +224,13 @@ class RejectFileView(APIView):
             'id':        shared.id,
             'sender_id': shared.sender_id,
         })
+        send_push_to_user(
+            shared.sender,
+            title=f'File rejected — {shared.room.name}',
+            body=f'{shared.file_name} was not approved',
+            sound_type='message',
+            url=f'/chat/{shared.room_id}',
+        )
 
         return Response({'detail': 'File rejected.'})
-
-
-
 

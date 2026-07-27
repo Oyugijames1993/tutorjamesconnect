@@ -14,6 +14,9 @@ from .views import (
     RequestAccessView,
     PendingAccessRequestsView,
     RedeemAccessTokenView,
+    VapidPublicKeyView,
+    SubscribePushView,
+    UnsubscribePushView,
 )
 
 urlpatterns = [
@@ -26,6 +29,11 @@ urlpatterns = [
     # room; provider signup does not (admin assigns them manually).
     path('signup/client/',   ClientSignupView.as_view(),   name='signup-client'),
     path('signup/provider/', ProviderSignupView.as_view(), name='signup-provider'),
+
+    # Web Push — real notifications even when the app isn't open
+    path('push/vapid-public-key/', VapidPublicKeyView.as_view(), name='vapid-public-key'),
+    path('push/subscribe/',        SubscribePushView.as_view(),  name='push-subscribe'),
+    path('push/unsubscribe/',      UnsubscribePushView.as_view(), name='push-unsubscribe'),
 
     # Lost-access recovery — client requests a link by phone number, admin
     # sees it and sends it manually over WhatsApp.
@@ -50,5 +58,6 @@ urlpatterns = [
     path('me/',    MeView.as_view(),       name='me'),
     path('users/', UserListView.as_view(), name='user-list'),
 ]
+
 
 

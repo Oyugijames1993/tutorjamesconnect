@@ -4,7 +4,19 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <title>TutorJamesConnect</title>
+
+    <!-- PWA: installable app + theming -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#1e3a5f" />
+
+    <!-- iOS ignores manifest.json icons/behavior entirely — these are the
+         only tags that actually control the home-screen icon and
+         standalone (no browser chrome) mode on iPhone/iPad. -->
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="TJConnect" />
   </head>
   <body>
     <div id="root"></div>
