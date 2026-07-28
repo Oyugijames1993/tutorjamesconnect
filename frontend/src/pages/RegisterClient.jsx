@@ -360,7 +360,7 @@ function Field({ label, error, children }) {
 const S = {
   page: {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    minHeight: '100vh', background: 'linear-gradient(135deg, #1a56a0, #0d3b6e)',
+    minHeight: '100vh', background: 'linear-gradient(135deg, #075e54, #054c40)',
     fontFamily: "'Segoe UI', Helvetica, Arial, sans-serif", padding: 20,
   },
   card: {
@@ -368,39 +368,38 @@ const S = {
     maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
   },
   brandMark: {
-    width: 48, height: 48, borderRadius: 12, background: '#1a56a0', color: '#fff',
+    width: 48, height: 48, borderRadius: '50%', background: '#00a884', color: '#fff',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     fontWeight: 800, fontSize: 18, marginBottom: 20,
   },
-  title:    { fontSize: 22, fontWeight: 700, color: '#1a1a1a', margin: '0 0 6px' },
-  subtitle: { fontSize: 14, color: '#888', margin: '0 0 28px' },
+  title:    { fontSize: 22, fontWeight: 700, color: '#111b21', margin: '0 0 6px' },
+  subtitle: { fontSize: 14, color: '#667781', margin: '0 0 28px' },
   form:     { display: 'flex', flexDirection: 'column' },
-  label:    { display: 'block', fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 6 },
+  label:    { display: 'block', fontSize: 13, fontWeight: 600, color: '#3b4a54', marginBottom: 6 },
   input: {
-    width: '100%', padding: '11px 13px', borderRadius: 9, border: '1.5px solid #ddd',
+    width: '100%', padding: '11px 13px', borderRadius: 9, border: '1.5px solid #d7ddE0',
     fontSize: 14, outline: 'none', boxSizing: 'border-box',
   },
   phoneRow: { display: 'flex', gap: 8 },
   countrySelect: {
-    flexShrink: 0, width: 130, padding: '11px 8px', borderRadius: 9, border: '1.5px solid #ddd',
+    flexShrink: 0, width: 130, padding: '11px 8px', borderRadius: 9, border: '1.5px solid #d7ddE0',
     fontSize: 13, outline: 'none', background: '#fff', cursor: 'pointer',
   },
   phoneInput: {
-    flex: 1, padding: '11px 13px', borderRadius: 9, border: '1.5px solid #ddd',
+    flex: 1, padding: '11px 13px', borderRadius: 9, border: '1.5px solid #d7ddE0',
     fontSize: 14, outline: 'none', boxSizing: 'border-box', minWidth: 0,
   },
   fieldError:   { fontSize: 12, color: '#e53e3e', marginTop: 5 },
   generalError: {
-    fontSize: 13, color: '#e53e3e', background: '#fae6e6', borderRadius: 8,
+    fontSize: 13, color: '#e53e3e', background: '#fff0ef', borderRadius: 8,
     padding: '10px 12px', marginBottom: 16,
   },
   submitBtn: {
     padding: '13px', borderRadius: 10, border: 'none', cursor: 'pointer',
-    background: 'linear-gradient(135deg, #1a56a0, #0d3b6e)', color: '#fff',
+    background: '#00a884', color: '#fff',
     fontSize: 15, fontWeight: 700, marginTop: 6,
   },
   footer:     { textAlign: 'center', marginTop: 14, fontSize: 13 },
   footerText: { color: '#888' },
-  footerLink: { color: '#1a56a0', fontWeight: 600, textDecoration: 'none' },
+  footerLink: { color: '#00a884', fontWeight: 600, textDecoration: 'none' },
 }
-

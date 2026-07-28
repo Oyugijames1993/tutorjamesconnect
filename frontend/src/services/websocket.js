@@ -41,9 +41,12 @@ class ChatWebSocket {
   }
 
   // target: 'everyone' | 'client' | 'provider'
-  send(body, target = 'everyone') {
+  // replyToId: optional id of the message being replied to
+  send(body, target = 'everyone', replyToId = null) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ body, target }))
+      const payload = { body, target }
+      if (replyToId) payload.reply_to = replyToId
+      this.ws.send(JSON.stringify(payload))
     }
   }
 

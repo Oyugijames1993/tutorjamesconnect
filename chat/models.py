@@ -72,6 +72,7 @@ class Message(models.Model):
     target      = models.CharField(max_length=10, choices=TARGET_CHOICES, default='everyone')
     flagged     = models.BooleanField(default=False)
     flag_reason = models.CharField(max_length=200, blank=True)
+    reply_to    = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='replies')
     timestamp   = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -122,3 +123,4 @@ class SharedFile(models.Model):
 
     def __str__(self):
         return f"{self.sender.username} → {self.file_name} [{self.status}]"
+

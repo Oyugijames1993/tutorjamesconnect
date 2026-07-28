@@ -89,6 +89,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         data = json.loads(text_data)
         body = data.get('body', '').strip()
         role = self.user.role
+        reply_to_id = data.get('reply_to')
 
         if role == 'admin':
             target = data.get('target', 'everyone')
@@ -134,7 +135,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             # out of the general project conversation everyone else sees.
             # _can_see() already restricts target='admin' to admin + the
             # original sender, so a normal chat_message broadcast is safe.
-            msg = await self.save_message(room, body, 'sent', reason, 'admin')
+            msg, reply_preview = await self.save_message(room, body, 'sent', reason, 'admin', reply_to_id)
             await self.channel_layer.group_send(
                 self.room_group,
                 {
@@ -146,6 +147,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'role':           self.user.role,
                     'target':         'admin',
                     'redirected':     True,
+                    'reply_to':       reply_preview,
                     'time':           msg.timestamp.strftime('%H:%M'),
                 }
             )
@@ -160,7 +162,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
 
         if action == ACTION_HOLD:
-            msg = await self.save_message(room, body, 'pending', reason, target)
+            msg, reply_preview = await self.save_message(room, body, 'pending', reason, target, reply_to_id)
 
             # ── Sender sees their own pending bubble immediately ──────────────
             await self.send(text_data=json.dumps({
@@ -172,6 +174,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'sender': self.user.display_name,
                 'role':   self.user.role,
                 'target': target,
+                'reply_to': reply_preview,
                 'time':   msg.timestamp.strftime('%H:%M'),
             }))
 
@@ -204,6 +207,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'sender_channel': self.channel_name,
                     'role':           self.user.role,
                     'target':         target,
+                    'reply_to':       reply_preview,
                     'time':           msg.timestamp.strftime('%H:%M'),
                 }
             )
@@ -217,7 +221,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             )
             return
 
-        msg = await self.save_message(room, body, 'sent', '', target)
+        msg, reply_preview = await self.save_message(room, body, 'sent', '', target, reply_to_id)
         await self.channel_layer.group_send(
             self.room_group,
             {
@@ -228,6 +232,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'sender_channel': self.channel_name,   # ← added so sender can be identified
                 'role':           self.user.role,
                 'target':         target,
+                'reply_to':       reply_preview,
                 'time':           msg.timestamp.strftime('%H:%M'),
             }
         )
@@ -279,6 +284,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'role':       event['role'],
             'target':     target,
             'redirected': event.get('redirected', False),
+            'reply_to':   event.get('reply_to'),
             'time':       event['time'],
         }))
 
@@ -307,6 +313,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'sender': event['sender'],
             'role':   event['role'],
             'target': event.get('target', 'everyone'),
+            'reply_to': event.get('reply_to'),
             'time':   event['time'],
         }))
 
@@ -492,7 +499,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if role == 'admin':
             msgs = list(
                 room.messages.filter(status__in=['sent', 'approved', 'pending'])
-                .select_related('sender')
+                .select_related('sender', 'reply_to__sender')
                 .order_by('timestamp')[:50]
             )
 
@@ -506,7 +513,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     Q(status__in=['sent', 'approved'], target__in=['everyone', 'provider']) |
                     Q(sender=self.user)  # all own messages regardless of target/status
                 )
-                .select_related('sender')
+                .select_related('sender', 'reply_to__sender')
                 .order_by('timestamp')[:50]
             )
             # Deduplicate
@@ -523,7 +530,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     Q(status__in=['sent', 'approved'], target__in=['everyone', 'client']) |
                     Q(sender=self.user)  # always see own messages, regardless of target/status
                 )
-                .select_related('sender')
+                .select_related('sender', 'reply_to__sender')
                 .order_by('timestamp')[:50]
             )
             # Deduplicate
@@ -543,6 +550,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'status':     m.status,
                 'target':     m.target,
                 'redirected': bool(m.flagged and m.target == 'admin' and m.status != 'pending'),
+                'reply_to':   ({'id': m.reply_to.id, 'sender': m.reply_to.sender.display_name, 'body': m.reply_to.body[:120]} if m.reply_to_id else None),
                 'time':       m.timestamp.strftime('%H:%M'),
                 '_ts':        m.timestamp,
             }
@@ -604,8 +612,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
         return combined
 
     @database_sync_to_async
-    def save_message(self, room, body, msg_status, flag_reason, target='everyone'):
-        return Message.objects.create(
+    def save_message(self, room, body, msg_status, flag_reason, target='everyone', reply_to_id=None):
+        reply_to = None
+        reply_preview = None
+        if reply_to_id:
+            # Only allow replying to a message that's actually in this room —
+            # ignore anything else rather than erroring, so a stale/bad
+            # reply_to_id just silently sends as a normal message.
+            reply_to = Message.objects.filter(id=reply_to_id, room=room).select_related('sender').first()
+            if reply_to:
+                reply_preview = {
+                    'id':     reply_to.id,
+                    'sender': reply_to.sender.display_name,
+                    'body':   reply_to.body[:120],
+                }
+
+        msg = Message.objects.create(
             room        = room,
             sender      = self.user,
             body        = body,
@@ -613,7 +635,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
             target      = target,
             flagged     = bool(flag_reason),
             flag_reason = flag_reason,
+            reply_to    = reply_to,
         )
+        return msg, reply_preview
 
 
 def _fmt_size(n):

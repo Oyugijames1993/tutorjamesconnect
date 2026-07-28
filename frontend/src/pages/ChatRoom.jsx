@@ -54,6 +54,7 @@ export default function ChatRoom() {
   const [rooms, setRooms]                     = useState([])
   const [activeRoom, setActiveRoom]           = useState(null)
   const [input, setInput]                     = useState('')
+  const [replyingTo, setReplyingTo]            = useState(null)
   const [showSidebar, setShowSidebar]         = useState(true)
   const [rightTab, setRightTab]               = useState('members')
   const [showRightPanel, setShowRightPanel]   = useState(true)
@@ -122,6 +123,14 @@ export default function ChatRoom() {
   const seenIdsRef     = useRef(new Set())
   const fileInputRef   = useRef(null)
   const roomWsRefs     = useRef({})
+  const mediaRecorderRef = useRef(null)
+  const audioChunksRef   = useRef([])
+  const recordingTimerRef = useRef(null)
+
+  const [isRecording, setIsRecording]           = useState(false)
+  const [recordingSeconds, setRecordingSeconds] = useState(0)
+
+  const MAX_RECORDING_SECONDS = 180 // 3 minutes
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
@@ -262,8 +271,9 @@ export default function ChatRoom() {
 
   const sendMessage = () => {
     if (!input.trim() || !connected) return
-    wsRef.current.send(input.trim(), (isAdmin || isProvider) ? messageTarget : 'everyone')
+    wsRef.current.send(input.trim(), (isAdmin || isProvider) ? messageTarget : 'everyone', replyingTo?.id || null)
     setInput('')
+    setReplyingTo(null)
   }
 
   const formatFileSize = n => {
@@ -273,8 +283,15 @@ export default function ChatRoom() {
   }
 
   const handleFileUpload = async e => {
-    const file = e.target.files[0]; if (!file || !activeRoom) return
-    if (!connected) { setError('Not connected yet — please wait a moment and try again.'); setTimeout(() => setError(''), 4000); e.target.value = ''; return }
+    const file = e.target.files[0]
+    e.target.value = ''
+    if (!file) return
+    await uploadFile(file)
+  }
+
+  const uploadFile = async file => {
+    if (!activeRoom) return
+    if (!connected) { setError('Not connected yet — please wait a moment and try again.'); setTimeout(() => setError(''), 4000); return }
     const fd = new FormData(); fd.append('file', file)
     try {
       const res = await api.post('/chat/rooms/' + activeRoom.id + '/upload-file/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
@@ -290,7 +307,7 @@ export default function ChatRoom() {
           file_id,
           file_name: file.name,
           file_size: formatFileSize(file.size),
-          file_url: isImageFile(file.name) ? URL.createObjectURL(file) : null,
+          file_url: (isImageFile(file.name) || isAudioFile(file.name)) ? URL.createObjectURL(file) : null,
           sender: user?.display_name,
           role: user?.role,
           status: fileStatus,
@@ -299,8 +316,64 @@ export default function ChatRoom() {
       }
     }
     catch { setError('Failed to upload file.'); setTimeout(() => setError(''), 4000) }
-    e.target.value = ''
   }
+
+  const startRecording = async () => {
+    if (!connected) { setError('Not connected yet — please wait a moment and try again.'); setTimeout(() => setError(''), 4000); return }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : ''
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+      audioChunksRef.current = []
+
+      recorder.ondataavailable = e => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
+      recorder.onstop = () => {
+        stream.getTracks().forEach(t => t.stop())
+        clearInterval(recordingTimerRef.current)
+        setIsRecording(false)
+        const wasCancelled = recorder._cancelled
+        setRecordingSeconds(0)
+        if (wasCancelled || audioChunksRef.current.length === 0) return
+
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+        const ext = (recorder.mimeType || 'audio/webm').includes('webm') ? 'webm' : 'm4a'
+        const file = new File([blob], `voice-message-${Date.now()}.${ext}`, { type: blob.type })
+        uploadFile(file)
+      }
+
+      mediaRecorderRef.current = recorder
+      recorder.start()
+      setIsRecording(true)
+      setRecordingSeconds(0)
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds(prev => {
+          if (prev + 1 >= MAX_RECORDING_SECONDS) {
+            stopRecording()
+            return prev
+          }
+          return prev + 1
+        })
+      }, 1000)
+    } catch {
+      setError('Could not access your microphone. Check your browser permissions.')
+      setTimeout(() => setError(''), 4000)
+    }
+  }
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+    }
+  }
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current._cancelled = true
+      mediaRecorderRef.current.stop()
+    }
+  }
+
+  const formatRecordingTime = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
   const updateSetting = async (key, value) => {
     try { await api.patch('/chat/rooms/' + activeRoom.id + '/settings/', { [key]: value }) }
@@ -358,6 +431,7 @@ export default function ChatRoom() {
   const statusLabel = s => s === 'active' ? 'Active' : s === 'negotiating' ? 'Negotiating' : 'Closed'
   const getClientDisplay = room => room?.client?.display_name || room?.client || 'Client'
   const isImageFile = fn => /\.(jpg|jpeg|png|gif|webp)$/i.test(fn)
+  const isAudioFile = fn => /\.(webm|mp3|m4a|ogg|wav|mp4)$/i.test(fn)
   const totalPending = pendingMessages.length + pendingFiles.length
 
   const roleStyle = role => {
@@ -555,6 +629,7 @@ export default function ChatRoom() {
 
             if (msg.type === 'file') {
               const isImg = isImageFile(msg.file_name)
+              const isAudio = isAudioFile(msg.file_name)
               const isPending = msg.status === 'pending'
               const isRejected = msg.status === 'rejected'
               return (
@@ -572,12 +647,23 @@ export default function ChatRoom() {
                     }}>
                       {isPending && <div style={S.pendingTag}>⏳ Awaiting approval</div>}
                       {isRejected && <div style={{ ...S.pendingTag, color: C.red }}>✕ Rejected</div>}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{ fontSize: 26 }}>{isImg ? '🖼️' : '📄'}</span>
-                        <div><div style={S.fileName}>{msg.file_name}</div><div style={S.fileMeta}>{msg.file_size}</div></div>
-                      </div>
+                      {!isAudio && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ fontSize: 26 }}>{isImg ? '🖼️' : '📄'}</span>
+                          <div><div style={S.fileName}>{msg.file_name}</div><div style={S.fileMeta}>{msg.file_size}</div></div>
+                        </div>
+                      )}
                       {isImg && msg.file_url && !isRejected && <img src={msg.file_url} alt={msg.file_name} style={{ width: '100%', borderRadius: 8, marginTop: 10, maxHeight: 200, objectFit: 'cover' }} />}
-                      {msg.file_url && !isRejected && <a href={msg.file_url} target="_blank" rel="noreferrer" style={S.dlLink}>↓ Download</a>}
+                      {isAudio && msg.file_url && !isRejected && (
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                            <span style={{ fontSize: 18 }}>🎤</span>
+                            <span style={S.fileMeta}>{msg.file_size}</span>
+                          </div>
+                          <audio controls src={msg.file_url} style={{ width: 220, height: 34 }} />
+                        </div>
+                      )}
+                      {!isAudio && msg.file_url && !isRejected && <a href={msg.file_url} target="_blank" rel="noreferrer" style={S.dlLink}>↓ Download</a>}
                       {isAdmin && isPending && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
                           <button className="tjc-approve" style={S.appBtn} onClick={async () => {
@@ -605,8 +691,11 @@ export default function ChatRoom() {
             const visColor    = msg.target === 'client' ? { bg: C.clientBg, text: C.clientText } : msg.target === 'provider' ? { bg: C.providerBg, text: C.providerText } : { bg: C.adminBg, text: C.adminText }
 
             return (
-              <div key={msg.id || idx} style={{ ...S.msgRow, justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
+              <div key={msg.id || idx} className="tjc-msgrow" style={{ ...S.msgRow, justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
                 {!isMe && <div style={{ ...S.msgAv, background: avatarBg(msg.sender) }}>{msg.sender?.[0]?.toUpperCase()}</div>}
+                {isMe && (
+                  <button className="tjc-reply-btn" style={S.replyIconBtn} onClick={() => setReplyingTo(msg)} title="Reply">↩</button>
+                )}
                 <div style={{ maxWidth: '62%' }}>
                   {!isMe && (
                     <div style={{ ...S.msgMeta, justifyContent: 'flex-start' }}>
@@ -620,6 +709,12 @@ export default function ChatRoom() {
                     ...(isFlagged ? { background: C.amberLight, border: `1.5px solid ${C.goldBorder}`, boxShadow: 'none' } : {}),
                   }}>
                     {isFlagged && <div style={S.flagTag}>⚠️ Pending approval</div>}
+                    {msg.reply_to && (
+                      <div style={S.quotedBox}>
+                        <div style={S.quotedSender}>{msg.reply_to.sender}</div>
+                        <div style={S.quotedBody}>{msg.reply_to.body}</div>
+                      </div>
+                    )}
                     <span style={{ color: C.text }}>{msg.body}</span>
                     {isAdmin && isFlagged && (
                       <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
@@ -648,6 +743,9 @@ export default function ChatRoom() {
                     {msg.time}{isMe && !isFlagged && <span style={{ color: C.gold, marginLeft: 4 }}>✓✓</span>}
                   </div>
                 </div>
+                {!isMe && (
+                  <button className="tjc-reply-btn" style={S.replyIconBtn} onClick={() => setReplyingTo(msg)} title="Reply">↩</button>
+                )}
               </div>
             )
           })}
@@ -669,27 +767,56 @@ export default function ChatRoom() {
           </div>
         )}
 
+        {/* Reply banner */}
+        {replyingTo && (
+          <div style={S.replyBanner}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={S.replyBannerLabel}>Replying to {replyingTo.sender}</div>
+              <div style={S.replyBannerBody}>{(replyingTo.body || (replyingTo.type === 'file' ? `📎 ${replyingTo.file_name}` : '')).slice(0, 100)}</div>
+            </div>
+            <button style={S.replyCancelBtn} onClick={() => setReplyingTo(null)}>✕</button>
+          </div>
+        )}
+
         {/* Input */}
         <div style={S.inputArea}>
-          <div style={S.inputBox}>
-            <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} disabled={!filesEnabled || !connected} />
-            <button className="tjc-icon" style={{ ...S.inputIco, opacity: filesEnabled && connected ? 1 : 0.3 }}
-              onClick={() => filesEnabled && connected && fileInputRef.current?.click()}>
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-            </button>
-            <textarea style={S.textarea}
-              placeholder={!connected ? 'Connecting…' : messageTarget === 'client' ? 'Message to client only…' : messageTarget === 'provider' ? 'Message to provider only…' : messageTarget === 'admin' ? 'Private message to admin…' : 'Type a message'}
-              value={input} onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown} rows={1} disabled={!connected} />
-            <button className="tjc-icon" style={S.inputIco}>
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
-            </button>
-            <button className="tjc-send"
-              style={{ ...S.sendBtn, ...(!(input.trim() && connected) ? S.sendOff : {}) }}
-              onClick={sendMessage} disabled={!input.trim() || !connected}>
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
-            </button>
-          </div>
+          {isRecording ? (
+            <div style={S.recordingBox}>
+              <span style={S.recordingDot} />
+              <span style={S.recordingTime}>{formatRecordingTime(recordingSeconds)}</span>
+              <span style={S.recordingLabel}>Recording…</span>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                <button style={S.recordingCancelBtn} onClick={cancelRecording}>🗑 Cancel</button>
+                <button style={S.recordingStopBtn} onClick={stopRecording}>⬤ Stop &amp; Send</button>
+              </div>
+            </div>
+          ) : (
+            <div style={S.inputBox}>
+              <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} disabled={!filesEnabled || !connected} />
+              <button className="tjc-icon" style={{ ...S.inputIco, opacity: filesEnabled && connected ? 1 : 0.3 }}
+                onClick={() => filesEnabled && connected && fileInputRef.current?.click()}>
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              </button>
+              <textarea style={S.textarea}
+                placeholder={!connected ? 'Connecting…' : messageTarget === 'client' ? 'Message to client only…' : messageTarget === 'provider' ? 'Message to provider only…' : messageTarget === 'admin' ? 'Private message to admin…' : 'Type a message'}
+                value={input} onChange={e => setInput(e.target.value)}
+                onKeyDown={handleKeyDown} rows={1} disabled={!connected} />
+              <button className="tjc-icon" style={S.inputIco}>
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+              </button>
+              {user?.role === 'client' && !input.trim() && (
+                <button className="tjc-icon" style={{ ...S.inputIco, opacity: filesEnabled && connected ? 1 : 0.3 }}
+                  onClick={() => filesEnabled && connected && startRecording()} title="Record a voice message">
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                </button>
+              )}
+              <button className="tjc-send"
+                style={{ ...S.sendBtn, ...(!(input.trim() && connected) ? S.sendOff : {}) }}
+                onClick={sendMessage} disabled={!input.trim() || !connected}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
+              </button>
+            </div>
+          )}
           {(isAdmin || isProvider) && activeRoom.status !== 'closed' && (
             <div style={S.targetRow}>
               <span style={S.targetLbl}>Send to:</span>
@@ -905,6 +1032,7 @@ const css = `
   textarea, input, select, button { font-family: inherit; }
   textarea:focus, input:focus, select:focus { outline: none; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes redPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
   @keyframes fadeUp { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
   .tjc-newroom { transition: all 0.15s; }
   .tjc-newroom:hover { background: #008a6e !important; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,168,132,0.35) !important; }
@@ -912,6 +1040,9 @@ const css = `
   .tjc-icon:hover { background: #f0f2f5 !important; color: #075e54 !important; }
   .tjc-send:hover:not(:disabled) { background: #008a6e !important; transform: scale(1.06); box-shadow: 0 4px 14px rgba(0,168,132,0.45) !important; }
   .tjc-target:hover { border-color: #00a884 !important; color: #00a884 !important; }
+  .tjc-reply-btn { opacity: 0; transition: opacity 0.15s; background: none; border: none; cursor: pointer; color: #8696a0; align-self: center; padding: 4px; }
+  .tjc-msgrow:hover .tjc-reply-btn { opacity: 1; }
+  .tjc-reply-btn:hover { color: #00a884; }
   .tjc-approve:hover { background: #c3e6cb !important; }
   .tjc-reject:hover  { background: #f5c6cb !important; }
   .tjc-action:hover  { background: #f5f8fd !important; }
@@ -1001,6 +1132,22 @@ const S = {
   inviteBar:    { display: 'flex', gap: 8, padding: '8px 18px', borderTop: '1px solid #e9edef', background: '#f0f2f5' },
   inviteInput:  { flex: 1, padding: '7px 11px', borderRadius: 20, border: '1.5px solid #e9edef', fontSize: 13, color: '#111b21' },
   inviteBtn:    { padding: '7px 15px', borderRadius: 20, border: 'none', background: '#00a884', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' },
+
+  replyIconBtn: { fontSize: 16, lineHeight: 1 },
+  quotedBox:    { borderLeft: '3px solid #00a884', background: 'rgba(0,168,132,0.08)', borderRadius: 6, padding: '5px 9px', marginBottom: 6 },
+  quotedSender: { fontSize: 11, fontWeight: 700, color: '#00a884', marginBottom: 2 },
+  quotedBody:   { fontSize: 12, color: '#5b6b73', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  replyBanner:  { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', background: '#eef7f4', borderTop: '1px solid #cdeade', borderLeft: '3px solid #00a884' },
+  replyBannerLabel: { fontSize: 12, fontWeight: 700, color: '#00a884' },
+  replyBannerBody:  { fontSize: 12, color: '#5b6b73', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  replyCancelBtn:   { background: 'none', border: 'none', color: '#8696a0', fontSize: 15, cursor: 'pointer', flexShrink: 0 },
+
+  recordingBox: { display: 'flex', alignItems: 'center', gap: 10, background: '#fff', borderRadius: 24, padding: '10px 16px' },
+  recordingDot: { width: 10, height: 10, borderRadius: '50%', background: '#e53e3e', animation: 'redPulse 1.2s ease-in-out infinite' },
+  recordingTime: { fontSize: 14, fontWeight: 700, color: '#111b21', fontVariantNumeric: 'tabular-nums' },
+  recordingLabel: { fontSize: 13, color: '#8696a0' },
+  recordingCancelBtn: { padding: '7px 12px', borderRadius: 20, border: '1px solid #ddd', background: 'none', color: '#888', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
+  recordingStopBtn:   { padding: '7px 14px', borderRadius: 20, border: 'none', background: '#e53e3e', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' },
 
   inputArea:    { padding: '10px 14px 12px', background: '#f0f2f5', borderTop: '1px solid #e9edef' },
   inputBox:     { display: 'flex', alignItems: 'center', gap: 6, background: '#ffffff', borderRadius: 24, padding: '5px 8px' },
