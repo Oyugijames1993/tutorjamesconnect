@@ -31,7 +31,7 @@ const C = {
   textFaint:   '#8696a0',
   // Role colors — lighter, friendlier
   adminBg:     '#e7f8f3', adminText: '#008a6e',
-  providerBg:  '#fef6e0', providerText: '#8a6d00',
+  providerBg:  '#eef0ff', providerText: '#4338ca',
   clientBg:    '#e9f3ff', clientText:   '#2a5298',
   // Status
   green:       '#00a884',
@@ -573,9 +573,6 @@ export default function ChatRoom() {
                 <span style={S.sep}>·</span>
                 Files {filesEnabled ? 'enabled' : 'disabled'}
               </div>
-              {negotiationMode && (isAdmin || isProvider) && (
-                <div style={S.negotiationBanner}>🤝 Negotiation mode is ON — client messages go to admin only</div>
-              )}
             </div>
           </div>
           <div style={S.headerR}>
@@ -609,6 +606,13 @@ export default function ChatRoom() {
         </div>
 
         {error && <div style={S.errorBar}>{error}</div>}
+
+        {negotiationMode && (isAdmin || isProvider) && (
+          <div style={S.negotiationBanner}>
+            <span style={S.negotiationIcon}>🛡️</span>
+            Negotiation mode is ON — client messages go to admin only
+          </div>
+        )}
 
         {/* Messages */}
         <div style={S.messages}>
@@ -831,7 +835,7 @@ export default function ChatRoom() {
                 <button className="tjc-target" onClick={toggleNegotiationMode}
                   style={{ ...S.targetBtn, ...(negotiationMode ? S.negotiationOn : {}) }}
                   title="While on, every client message goes to you only — the provider never sees it.">
-                  🤝 Negotiation {negotiationMode ? '· ON' : ''}
+                  🤝 Negotiation {negotiationMode ? '• ON' : ''}
                 </button>
               )}
               <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: connected ? C.green : C.amber }}>
@@ -857,7 +861,7 @@ export default function ChatRoom() {
               <button key={t} className="tjc-tab"
                 style={{ ...S.tab, ...(rightTab === t ? S.tabOn : {}) }}
                 onClick={() => setRightTab(t)}>
-                {t === 'members' ? 'Members' : 'Room Info'}
+                {t === 'members' ? `Members (${allMembers.length})` : 'Room Info'}
               </button>
             ))}
           </div>
@@ -886,14 +890,16 @@ export default function ChatRoom() {
                         {m.role.charAt(0).toUpperCase() + m.role.slice(1)}
                       </span>
                       {isAdmin && (m.isProvider || m.isExtraClient) && (
-                        <button style={S.removeBtn} onClick={async () => {
+                        <button style={S.removeBtn} title="Remove from room" onClick={async () => {
                           try {
                             const ep = m.isProvider ? 'remove-provider' : 'remove-client'
                             const key = m.isProvider ? 'provider_id' : 'client_id'
                             const res = await api.post('/chat/rooms/' + activeRoom.id + '/' + ep + '/', { [key]: m.id })
                             setActiveRoom(res.data); api.get('/chat/rooms/').then(r => setRooms(r.data))
                           } catch { setError('Failed to remove.') }
-                        }}>✕</button>
+                        }}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
                       )}
                     </div>
                   ))}
@@ -1087,23 +1093,27 @@ const S = {
   signOutBtn:   { margin: '8px 10px 14px', padding: '8px 12px', border: '1px solid #e9edef', borderRadius: 8, background: 'none', color: '#8696a0', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.15s' },
 
   // ── Main ──────────────────────────────────────────────────────────────────
-  main:         { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, background: '#efeae2' },
-  header:       { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 18px', background: '#f0f2f5', borderBottom: '1px solid #e9edef' },
+  main:         { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, background: '#f7f8fa' },
+  header:       { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 18px', background: '#ffffff', borderBottom: '1px solid #eef0f2' },
   headerL:      { display: 'flex', alignItems: 'center', gap: 11 },
   headerR:      { display: 'flex', alignItems: 'center', gap: 3 },
   iconBtn:      { background: 'none', border: 'none', borderRadius: '50%', padding: '8px', cursor: 'pointer', color: '#54656f', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s', position: 'relative' },
   roomHeaderAv: { width: 40, height: 40, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 700, flexShrink: 0 },
   headerRoomName: { fontSize: 15, fontWeight: 600, color: '#111b21', letterSpacing: '-0.1px' },
   headerRoomMeta: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#667781', marginTop: 2 },
-  negotiationBanner: { fontSize: 11, fontWeight: 700, color: '#8a6d00', background: '#fef6e0', padding: '2px 8px', borderRadius: 20, marginTop: 4, display: 'inline-block' },
+  negotiationBanner: {
+    display: 'flex', alignItems: 'center', gap: 8, padding: '11px 22px', margin: '10px 22px 0',
+    background: '#eef4ff', border: '1px solid #cfe0fb', borderRadius: 10,
+    color: '#2a5298', fontSize: 13, fontWeight: 600,
+  },
+  negotiationIcon: { fontSize: 14 },
   sep:          { color: '#c9cfd3' },
   headerDot:    { position: 'absolute', top: 4, right: 4, width: 7, height: 7, borderRadius: '50%', background: '#e53e3e' },
   errorBar:     { background: '#fff0ef', color: '#e53e3e', padding: '7px 18px', fontSize: 13, borderBottom: '1px solid #feb2b2' },
 
   messages:     {
     flex: 1, overflowY: 'auto', padding: '16px 22px', display: 'flex', flexDirection: 'column', gap: 2,
-    background: '#efeae2',
-    backgroundImage: "url(\"data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23e0dbd0' fill-opacity='0.4'%3E%3Ccircle cx='10' cy='10' r='1.4'/%3E%3Ccircle cx='50' cy='30' r='1.4'/%3E%3Ccircle cx='90' cy='10' r='1.4'/%3E%3Ccircle cx='30' cy='70' r='1.4'/%3E%3Ccircle cx='70' cy='90' r='1.4'/%3E%3C/g%3E%3C/svg%3E\")",
+    background: '#f7f8fa',
   },
   emptyChat:    { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 },
   emptyIcon:    { fontSize: 44, marginBottom: 6 },
@@ -1112,7 +1122,7 @@ const S = {
   sysMsg:       { alignSelf: 'center', maxWidth: '80%', margin: '8px 0', background: '#fff3c4', borderRadius: 7, padding: '5px 12px', boxShadow: '0 1px 1px rgba(0,0,0,0.08)' },
   sysText:      { fontSize: 12, color: '#5b5228', textAlign: 'center' },
 
-  msgRow:       { display: 'flex', alignItems: 'flex-end', gap: 8, animation: 'fadeUp 0.15s ease', marginBottom: 10 },
+  msgRow:       { display: 'flex', alignItems: 'flex-end', gap: 8, animation: 'fadeUp 0.15s ease', marginBottom: 4 },
   msgAv:        { width: 30, height: 30, borderRadius: '50%', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 },
   msgMeta:      { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 },
   msgSender:    { fontSize: 12, fontWeight: 700, color: '#00a884' },
@@ -1129,7 +1139,7 @@ const S = {
   fileMeta:     { fontSize: 11, color: '#8696a0', marginTop: 1 },
   dlLink:       { display: 'inline-block', marginTop: 8, fontSize: 12, color: '#00a884', fontWeight: 600, textDecoration: 'none' },
 
-  inviteBar:    { display: 'flex', gap: 8, padding: '8px 18px', borderTop: '1px solid #e9edef', background: '#f0f2f5' },
+  inviteBar:    { display: 'flex', gap: 8, padding: '8px 18px', borderTop: '1px solid #eef0f2', background: '#ffffff' },
   inviteInput:  { flex: 1, padding: '7px 11px', borderRadius: 20, border: '1.5px solid #e9edef', fontSize: 13, color: '#111b21' },
   inviteBtn:    { padding: '7px 15px', borderRadius: 20, border: 'none', background: '#00a884', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' },
 
@@ -1149,8 +1159,8 @@ const S = {
   recordingCancelBtn: { padding: '7px 12px', borderRadius: 20, border: '1px solid #ddd', background: 'none', color: '#888', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
   recordingStopBtn:   { padding: '7px 14px', borderRadius: 20, border: 'none', background: '#e53e3e', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' },
 
-  inputArea:    { padding: '10px 14px 12px', background: '#f0f2f5', borderTop: '1px solid #e9edef' },
-  inputBox:     { display: 'flex', alignItems: 'center', gap: 6, background: '#ffffff', borderRadius: 24, padding: '5px 8px' },
+  inputArea:    { padding: '10px 14px 12px', background: '#ffffff', borderTop: '1px solid #eef0f2' },
+  inputBox:     { display: 'flex', alignItems: 'center', gap: 6, background: '#ffffff', border: '1.5px solid #e4e9ee', borderRadius: 24, padding: '5px 8px' },
   inputIco:     { background: 'none', border: 'none', padding: '6px', cursor: 'pointer', color: '#8696a0', display: 'flex', alignItems: 'center', borderRadius: '50%', flexShrink: 0, transition: 'color 0.15s' },
   textarea:     { flex: 1, background: 'none', border: 'none', fontSize: 14, color: '#111b21', resize: 'none', lineHeight: 1.5, padding: '8px 0' },
   sendBtn:      { width: 38, height: 38, borderRadius: '50%', background: '#00a884', border: 'none', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s', boxShadow: '0 2px 8px rgba(0,168,132,0.28)' },
@@ -1159,7 +1169,7 @@ const S = {
   targetLbl:    { fontSize: 11, color: '#8696a0', fontWeight: 600 },
   targetBtn:    { fontSize: 11, padding: '4px 11px', borderRadius: 20, border: '1.5px solid #e9edef', cursor: 'pointer', background: '#fff', color: '#54656f', transition: 'all 0.15s', fontFamily: 'inherit' },
   targetOn:     { background: '#00a884', color: '#fff', borderColor: '#00a884', fontWeight: 600 },
-  negotiationOn: { background: '#fef6e0', color: '#8a6d00', borderColor: '#d69e2e', fontWeight: 700 },
+  negotiationOn: { background: '#efe7fb', color: '#6b3fa0', borderColor: '#d6c3ee', fontWeight: 700 },
 
   appBtn:       { flex: 1, padding: '5px 8px', border: '1px solid #9ae6b4', borderRadius: 6, background: '#f0fff4', color: '#276749', fontSize: 11, fontWeight: 600, cursor: 'pointer', transition: 'background 0.15s', fontFamily: 'inherit' },
   rejBtn:       { flex: 1, padding: '5px 8px', border: '1px solid #feb2b2', borderRadius: 6, background: '#fff5f5', color: '#e53e3e', fontSize: 11, fontWeight: 600, cursor: 'pointer', transition: 'background 0.15s', fontFamily: 'inherit' },
@@ -1176,7 +1186,7 @@ const S = {
   memberRow:    { display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 },
   memberAv:     { width: 32, height: 32, borderRadius: '50%', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 },
   memberName:   { fontSize: 13, fontWeight: 600, color: '#111b21' },
-  removeBtn:    { background: 'none', border: '1px solid #feb2b2', borderRadius: 5, color: '#e53e3e', fontSize: 10, cursor: 'pointer', padding: '2px 6px', flexShrink: 0, marginLeft: 'auto', fontFamily: 'inherit' },
+  removeBtn:    { background: '#fff0ef', border: '1px solid #f8c9c7', borderRadius: 8, color: '#e53e3e', cursor: 'pointer', padding: '7px', flexShrink: 0, marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' },
 
   actionRow:    { display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid #e9edef', transition: 'background 0.12s', cursor: 'pointer' },
   actionIco:    { width: 30, height: 30, borderRadius: 7, background: '#e7f8f3', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
@@ -1197,3 +1207,5 @@ const S = {
   pendCard:     { background: '#fef6e0', border: '1px solid #f0dca0', borderRadius: 9, padding: '9px 11px', marginBottom: 7 },
   closeRoomBtn: { width: '100%', padding: '8px', border: '1px solid #feb2b2', borderRadius: 20, background: '#fff5f5', color: '#e53e3e', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'inherit' },
 }
+
+

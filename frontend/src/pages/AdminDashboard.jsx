@@ -132,6 +132,19 @@ export default function AdminDashboard() {
 
   return (
     <div style={styles.app}>
+      <style>{`
+        .tjc-nav-item:hover { background: #f0f2f5 !important; }
+        .tjc-refresh:hover { border-color: #00a884 !important; color: #00a884 !important; }
+        .tjc-open-btn:hover { background: #e7f8f3 !important; }
+        .tjc-create-btn:hover { filter: brightness(1.06); }
+        .tjc-chat-btn:hover { background: #00a884 !important; color: #fff !important; }
+        .tjc-logout-btn:hover { color: #e53e3e !important; border-color: #feb2b2 !important; background: #fff5f5 !important; }
+        .tjc-approve-btn:hover { background: #d9f4e3 !important; }
+        .tjc-reject-btn:hover { background: #fde3e3 !important; }
+        .tjc-table-row:hover { background: #f7f9fa !important; }
+        .tjc-view-all:hover { background: #e7f8f3 !important; }
+        .tjc-whatsapp-btn:hover { filter: brightness(1.06); }
+      `}</style>
 
       {/* ── SIDEBAR ── */}
       <div style={styles.sidebar}>
@@ -152,9 +165,10 @@ export default function AdminDashboard() {
           {tabs.map(tab => (
             <div
               key={tab.id}
+              className="tjc-nav-item"
               style={{
                 ...styles.navItem,
-                background: activeTab === tab.id ? '#1a56a0' : 'transparent',
+                background: activeTab === tab.id ? '#00a884' : 'transparent',
                 color:      activeTab === tab.id ? '#fff' : '#1a1a1a',
               }}
               onClick={() => setActiveTab(tab.id)}
@@ -165,10 +179,10 @@ export default function AdminDashboard() {
         </div>
 
         <div style={styles.sidebarBottom}>
-          <button style={styles.chatBtn} onClick={() => navigate('/chat/1')}>
+          <button className="tjc-chat-btn" style={styles.chatBtn} onClick={() => navigate('/chat/1')}>
             💬 Go to Chat
           </button>
-          <button style={styles.logoutBtn} onClick={logout}>
+          <button className="tjc-logout-btn" style={styles.logoutBtn} onClick={logout}>
             Sign Out
           </button>
         </div>
@@ -181,7 +195,7 @@ export default function AdminDashboard() {
           <div style={styles.headerTitle}>
             {tabs.find(t => t.id === activeTab)?.label}
           </div>
-          <button style={styles.refreshBtn} onClick={loadAll}>
+          <button className="tjc-refresh" style={styles.refreshBtn} onClick={loadAll}>
             🔄 Refresh
           </button>
         </div>
@@ -193,13 +207,11 @@ export default function AdminDashboard() {
           <div style={styles.content}>
             <div style={styles.statsGrid}>
               {[
-                { label: 'Total Clients',    value: overview.total_clients,    color: '#1a56a0', bg: '#f0f4ff' },
+                { label: 'Total Clients',    value: overview.total_clients,    color: '#00a884', bg: '#e7f8f3' },
                 { label: 'Total Providers',  value: overview.total_providers,  color: '#1a7a4a', bg: '#f0fff6' },
                 { label: 'Active Rooms',     value: overview.active_rooms,     color: '#BA7517', bg: '#fff8e1' },
                 { label: 'Total Rooms',      value: overview.total_rooms,      color: '#555',    bg: '#f5f5f5' },
-                { label: 'Total Messages',   value: overview.total_messages,   color: '#1a56a0', bg: '#f0f4ff' },
                 { label: 'Pending Messages', value: overview.pending_messages, color: '#e53e3e', bg: '#fae6e6' },
-                { label: 'Total Files',      value: overview.total_files,      color: '#1a7a4a', bg: '#f0fff6' },
                 { label: 'Pending Files',    value: overview.pending_files,    color: '#e53e3e', bg: '#fae6e6' },
               ].map(s => (
                 <div key={s.label} style={{ ...styles.statCard, background: s.bg }}>
@@ -220,26 +232,26 @@ export default function AdminDashboard() {
                     </div>
                     <div style={styles.pendingBody}>"{p.body}"</div>
                     <div style={styles.pendingBtns}>
-                      <button style={styles.approveBtn} onClick={() => approveMessage(p.id)}>✓ Approve</button>
-                      <button style={styles.rejectBtn} onClick={() => rejectMessage(p.id)}>✕ Reject</button>
+                      <button className="tjc-approve-btn" style={styles.approveBtn} onClick={() => approveMessage(p.id)}>✓ Approve</button>
+                      <button className="tjc-reject-btn" style={styles.rejectBtn} onClick={() => rejectMessage(p.id)}>✕ Reject</button>
                     </div>
                   </div>
                 ))}
                 {pendingFiles.slice(0, 2).map(f => (
-                  <div key={f.id} style={{ ...styles.pendingCard, background: '#f0f4ff', border: '1px solid #c0d4f0' }}>
+                  <div key={f.id} style={{ ...styles.pendingCard, background: '#e7f8f3', border: '1px solid #b6e6d8' }}>
                     <div style={styles.pendingInfo}>
                       <span style={styles.pendingFrom}>{f.sender?.display_name}</span>
-                      <span style={{ fontSize: 12, color: '#1a56a0' }}>📎 {f.file_name}</span>
+                      <span style={{ fontSize: 12, color: '#00a884' }}>📎 {f.file_name}</span>
                       <span style={{ fontSize: 11, color: '#888' }}>{f.file_size_display}</span>
                     </div>
                     <div style={styles.pendingBtns}>
-                      <button style={styles.approveBtn} onClick={() => approveFile(f.id)}>✓ Approve</button>
-                      <button style={styles.rejectBtn} onClick={() => rejectFile(f.id)}>✕ Reject</button>
+                      <button className="tjc-approve-btn" style={styles.approveBtn} onClick={() => approveFile(f.id)}>✓ Approve</button>
+                      <button className="tjc-reject-btn" style={styles.rejectBtn} onClick={() => rejectFile(f.id)}>✕ Reject</button>
                     </div>
                   </div>
                 ))}
                 {totalPending > 5 && (
-                  <button style={styles.viewAllBtn} onClick={() => setActiveTab('pending')}>
+                  <button className="tjc-view-all" style={styles.viewAllBtn} onClick={() => setActiveTab('pending')}>
                     View all {totalPending} pending items →
                   </button>
                 )}
@@ -263,7 +275,7 @@ export default function AdminDashboard() {
                 </thead>
                 <tbody>
                   {clients.map((c, i) => (
-                    <tr key={c.id} style={{ background: i % 2 === 0 ? '#fff' : '#f9f9f9' }}>
+                    <tr key={c.id} className="tjc-table-row" style={{ background: i % 2 === 0 ? '#fff' : '#f9f9f9' }}>
                       <td style={styles.td}>
                         <span style={styles.clientId}>{c.display_name || c.client_id}</span>
                       </td>
@@ -283,7 +295,7 @@ export default function AdminDashboard() {
                       </td>
                       <td style={styles.td}>
                         <button
-                          style={styles.openBtn}
+                          className="tjc-open-btn" style={styles.openBtn}
                           onClick={() => {
                             setNewRoom({ name: '', client_id: c.id })
                             setActiveTab('rooms')
@@ -315,7 +327,7 @@ export default function AdminDashboard() {
                 </thead>
                 <tbody>
                   {providers.map((p, i) => (
-                    <tr key={p.id} style={{ background: i % 2 === 0 ? '#fff' : '#f9f9f9' }}>
+                    <tr key={p.id} className="tjc-table-row" style={{ background: i % 2 === 0 ? '#fff' : '#f9f9f9' }}>
                       <td style={styles.td}>
                         <span style={styles.providerName}>{p.display_name}</span>
                       </td>
@@ -372,7 +384,7 @@ export default function AdminDashboard() {
                     </option>
                   ))}
                 </select>
-                <button style={styles.createBtn} onClick={createRoom}>
+                <button className="tjc-create-btn" style={styles.createBtn} onClick={createRoom}>
                   Create Room
                 </button>
               </div>
@@ -420,7 +432,7 @@ export default function AdminDashboard() {
                         </span>
                       </div>
                     </div>
-                    <button style={styles.openBtn} onClick={() => navigate('/chat/' + r.id)}>
+                    <button className="tjc-open-btn" style={styles.openBtn} onClick={() => navigate('/chat/' + r.id)}>
                       Open →
                     </button>
                   </div>
@@ -440,8 +452,8 @@ export default function AdminDashboard() {
                           </div>
                           <div style={styles.pendingBody}>"{p.body}"</div>
                           <div style={styles.pendingBtns}>
-                            <button style={styles.approveBtn} onClick={() => approveMessage(p.id)}>✓ Approve</button>
-                            <button style={styles.rejectBtn} onClick={() => rejectMessage(p.id)}>✕ Reject</button>
+                            <button className="tjc-approve-btn" style={styles.approveBtn} onClick={() => approveMessage(p.id)}>✓ Approve</button>
+                            <button className="tjc-reject-btn" style={styles.rejectBtn} onClick={() => rejectMessage(p.id)}>✕ Reject</button>
                           </div>
                         </div>
                       ))}
@@ -451,21 +463,21 @@ export default function AdminDashboard() {
                   {/* Pending files for this room */}
                   {roomPendingFiles.length > 0 && (
                     <div>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#1a56a0', marginBottom: 6 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: '#00a884', marginBottom: 6 }}>
                         📎 Pending Files ({roomPendingFiles.length})
                       </div>
                       {roomPendingFiles.map(f => (
-                        <div key={f.id} style={{ ...styles.pendingCard, background: '#f0f4ff', border: '1px solid #c0d4f0' }}>
+                        <div key={f.id} style={{ ...styles.pendingCard, background: '#e7f8f3', border: '1px solid #b6e6d8' }}>
                           <div style={styles.pendingInfo}>
                             <span style={styles.pendingFrom}>{f.sender?.display_name}</span>
-                            <span style={{ fontSize: 12, color: '#1a56a0', fontWeight: 500 }}>
+                            <span style={{ fontSize: 12, color: '#00a884', fontWeight: 500 }}>
                               📄 {f.file_name}
                             </span>
                             <span style={{ fontSize: 11, color: '#888' }}>{f.file_size_display}</span>
                           </div>
                           <div style={styles.pendingBtns}>
-                            <button style={styles.approveBtn} onClick={() => approveFile(f.id)}>✓ Approve</button>
-                            <button style={styles.rejectBtn} onClick={() => rejectFile(f.id)}>✕ Reject</button>
+                            <button className="tjc-approve-btn" style={styles.approveBtn} onClick={() => approveFile(f.id)}>✓ Approve</button>
+                            <button className="tjc-reject-btn" style={styles.rejectBtn} onClick={() => rejectFile(f.id)}>✕ Reject</button>
                           </div>
                         </div>
                       ))}
@@ -504,10 +516,10 @@ export default function AdminDashboard() {
                     </div>
                     <div style={styles.pendingBody}>"{p.body}"</div>
                     <div style={styles.pendingBtns}>
-                      <button style={styles.approveBtn} onClick={() => approveMessage(p.id)}>
+                      <button className="tjc-approve-btn" style={styles.approveBtn} onClick={() => approveMessage(p.id)}>
                         ✓ Approve — deliver to room
                       </button>
-                      <button style={styles.rejectBtn} onClick={() => rejectMessage(p.id)}>
+                      <button className="tjc-reject-btn" style={styles.rejectBtn} onClick={() => rejectMessage(p.id)}>
                         ✕ Reject — delete message
                       </button>
                     </div>
@@ -525,20 +537,20 @@ export default function AdminDashboard() {
                 <div style={styles.emptyState}>✅ No pending files</div>
               ) : (
                 pendingFiles.map(f => (
-                  <div key={f.id} style={{ ...styles.pendingCard, background: '#f0f4ff', border: '1px solid #c0d4f0' }}>
+                  <div key={f.id} style={{ ...styles.pendingCard, background: '#e7f8f3', border: '1px solid #b6e6d8' }}>
                     <div style={styles.pendingInfo}>
                       <span style={styles.pendingFrom}>From: {f.sender?.display_name}</span>
-                      <span style={{ fontSize: 12, color: '#1a56a0', fontWeight: 500 }}>
+                      <span style={{ fontSize: 12, color: '#00a884', fontWeight: 500 }}>
                         📄 {f.file_name}
                       </span>
                       <span style={{ fontSize: 11, color: '#888' }}>{f.file_size_display}</span>
                       <span style={{ fontSize: 11, color: '#888' }}>Room: {f.room_name}</span>
                     </div>
                     <div style={styles.pendingBtns}>
-                      <button style={styles.approveBtn} onClick={() => approveFile(f.id)}>
+                      <button className="tjc-approve-btn" style={styles.approveBtn} onClick={() => approveFile(f.id)}>
                         ✓ Approve — share in room
                       </button>
-                      <button style={styles.rejectBtn} onClick={() => rejectFile(f.id)}>
+                      <button className="tjc-reject-btn" style={styles.rejectBtn} onClick={() => rejectFile(f.id)}>
                         ✕ Reject — discard file
                       </button>
                     </div>
@@ -570,7 +582,7 @@ export default function AdminDashboard() {
                       <span style={styles.pendingFrom}>{r.user_display}</span>
                       <span style={{
                         fontSize: 12, fontWeight: 600,
-                        color: r.role === 'provider' ? '#1a7a4a' : '#1a56a0',
+                        color: r.role === 'provider' ? '#1a7a4a' : '#00a884',
                       }}>
                         {r.role === 'provider' ? '🎓 Provider' : '👤 Client'}
                       </span>
@@ -588,6 +600,7 @@ export default function AdminDashboard() {
                     )}
                     {r.phone_number ? (
                       <a
+                        className="tjc-whatsapp-btn"
                         href={
                           `https://wa.me/${r.phone_number.replace(/[^0-9]/g, '')}` +
                           `?text=${encodeURIComponent(
@@ -625,21 +638,21 @@ export default function AdminDashboard() {
 }
 
 const styles = {
-  app: { display: 'flex', height: '100vh', fontFamily: 'Arial, sans-serif', background: '#f5f5f5', overflow: 'hidden' },
+  app: { display: 'flex', height: '100vh', fontFamily: "'Segoe UI', Helvetica, Arial, sans-serif", background: '#f5f5f5', overflow: 'hidden' },
   loadingScreen: { display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' },
   loadingText: { fontSize: '16px', color: '#888' },
-  sidebar: { width: '240px', background: '#ffffff', borderRight: '1px solid #e5e5e5', display: 'flex', flexDirection: 'column', flexShrink: 0 },
-  sidebarHeader: { padding: '20px 16px 12px', background: 'linear-gradient(135deg, #1a56a0, #0d3b6e)' },
+  sidebar: { width: '240px', background: '#ffffff', borderRight: '1px solid #e5e5e5', display: 'flex', flexDirection: 'column', flexShrink: 0, boxShadow: '2px 0 8px rgba(0,0,0,0.03)' },
+  sidebarHeader: { padding: '20px 16px 12px', background: 'linear-gradient(135deg, #00a884, #054c40)' },
   logo: { color: '#ffffff', fontSize: '14px', fontWeight: '700' },
-  logoSub: { color: '#BDD7F5', fontSize: '11px', marginTop: '3px' },
+  logoSub: { color: '#a8e8dc', fontSize: '11px', marginTop: '3px' },
   userInfo: { display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', borderBottom: '1px solid #f0f0f0' },
-  avatar: { width: '36px', height: '36px', borderRadius: '50%', background: '#1a56a0', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '15px', flexShrink: 0 },
+  avatar: { width: '36px', height: '36px', borderRadius: '50%', background: '#00a884', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '15px', flexShrink: 0 },
   userName: { fontSize: '13px', fontWeight: '600', color: '#1a1a1a' },
   userRole: { fontSize: '11px', color: '#888' },
   navList: { flex: 1, padding: '8px', overflowY: 'auto' },
   navItem: { padding: '10px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', marginBottom: '4px', transition: 'background 0.15s' },
   sidebarBottom: { padding: '12px', borderTop: '1px solid #f0f0f0', display: 'flex', flexDirection: 'column', gap: '8px' },
-  chatBtn: { padding: '8px', border: '1px solid #1a56a0', borderRadius: '8px', background: 'none', color: '#1a56a0', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
+  chatBtn: { padding: '8px', border: '1px solid #00a884', borderRadius: '8px', background: 'none', color: '#00a884', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
   logoutBtn: { padding: '8px', border: '1px solid #ddd', borderRadius: '8px', background: 'none', color: '#888', fontSize: '13px', cursor: 'pointer' },
   main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   header: { padding: '16px 24px', background: '#fff', borderBottom: '1px solid #e5e5e5', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
@@ -647,8 +660,8 @@ const styles = {
   refreshBtn: { padding: '7px 14px', border: '1px solid #ddd', borderRadius: '8px', background: 'none', color: '#555', fontSize: '13px', cursor: 'pointer' },
   errorBanner: { background: '#fae6e6', color: '#a0251a', padding: '10px 24px', fontSize: '13px' },
   content: { flex: 1, overflowY: 'auto', padding: '24px' },
-  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' },
-  statCard: { padding: '20px', borderRadius: '12px', textAlign: 'center' },
+  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' },
+  statCard: { padding: '20px', borderRadius: '12px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
   statValue: { fontSize: '32px', fontWeight: '700', marginBottom: '6px' },
   statLabel: { fontSize: '12px', color: '#888', fontWeight: '500' },
   section: { background: '#fff', borderRadius: '12px', padding: '20px', marginBottom: '20px', border: '1px solid #e5e5e5' },
@@ -657,14 +670,14 @@ const styles = {
   th: { padding: '10px 14px', textAlign: 'left', background: '#f5f5f5', color: '#555', fontWeight: '600', fontSize: '12px', borderBottom: '1px solid #e5e5e5' },
   td: { padding: '10px 14px', borderBottom: '1px solid #f0f0f0', color: '#1a1a1a' },
   badge: { padding: '3px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '600' },
-  clientId: { fontWeight: '600', color: '#1a56a0', fontSize: '13px' },
+  clientId: { fontWeight: '600', color: '#00a884', fontSize: '13px' },
   providerName: { fontWeight: '600', color: '#1a7a4a', fontSize: '13px' },
   formRow: { display: 'flex', gap: '10px', alignItems: 'center' },
   formInput: { flex: 1, padding: '9px 12px', borderRadius: '8px', border: '1.5px solid #ddd', fontSize: '13px', outline: 'none' },
   formSelect: { flex: 1, padding: '9px 12px', borderRadius: '8px', border: '1.5px solid #ddd', fontSize: '13px', outline: 'none', background: '#fff', cursor: 'pointer' },
-  createBtn: { padding: '9px 20px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #1a56a0, #0d3b6e)', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
+  createBtn: { padding: '9px 20px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #00a884, #054c40)', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
   roomMsg: { marginTop: '10px', fontSize: '13px', fontWeight: '500' },
-  openBtn: { padding: '5px 12px', borderRadius: '6px', border: '1px solid #1a56a0', background: 'none', color: '#1a56a0', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
+  openBtn: { padding: '5px 12px', borderRadius: '6px', border: '1px solid #00a884', background: 'none', color: '#00a884', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
   pendingCard: { background: '#fff8e1', border: '1px solid #f0d080', borderRadius: '10px', padding: '14px', marginBottom: '10px' },
   pendingInfo: { display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap' },
   pendingFrom: { fontSize: '13px', fontWeight: '600', color: '#1a1a1a' },
@@ -674,6 +687,6 @@ const styles = {
   pendingBtns: { display: 'flex', gap: '8px' },
   approveBtn: { flex: 1, padding: '7px', border: '1px solid #1a7a4a', borderRadius: '8px', background: 'none', color: '#1a7a4a', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
   rejectBtn: { flex: 1, padding: '7px', border: '1px solid #e53e3e', borderRadius: '8px', background: 'none', color: '#e53e3e', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
-  viewAllBtn: { padding: '8px 16px', border: '1px solid #1a56a0', borderRadius: '8px', background: 'none', color: '#1a56a0', fontSize: '13px', cursor: 'pointer', marginTop: '8px' },
+  viewAllBtn: { padding: '8px 16px', border: '1px solid #00a884', borderRadius: '8px', background: 'none', color: '#00a884', fontSize: '13px', cursor: 'pointer', marginTop: '8px' },
   emptyState: { textAlign: 'center', fontSize: '14px', color: '#888', padding: '40px 0' },
 }
