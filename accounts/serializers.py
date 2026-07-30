@@ -16,8 +16,9 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = CustomUser
-        fields = ['id', 'display_name', 'client_id', 'email', 'phone_number',
-                  'role', 'is_verified', 'created_at', 'provider_profile']
+        fields = ['id', 'display_name', 'client_id', 'first_name', 'last_name',
+                  'email', 'phone_number', 'role', 'is_verified', 'created_at',
+                  'provider_profile']
 
 
 class ClientRegisterSerializer(serializers.ModelSerializer):
