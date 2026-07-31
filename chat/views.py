@@ -230,16 +230,11 @@ class InviteProviderView(APIView):
             )
 
         room.providers.add(provider)
-        room.status           = 'active'
+        room.status             = 'active'
         room.provider_joined_at = timezone.now()
         room.save()
 
-        Message.objects.create(
-            room   = room,
-            sender = request.user,
-            body   = f'{provider.display_name} (Provider) has joined the room.',
-            status = 'sent',
-        )
+        # No join message — provider identity is hidden from clients
 
         from accounts.push import send_push_to_user
         send_push_to_user(
@@ -291,12 +286,7 @@ class RemoveProviderView(APIView):
             room.status = 'negotiating'
             room.save()
 
-        Message.objects.create(
-            room   = room,
-            sender = request.user,
-            body   = f'{provider.display_name} (Provider) has been removed from the room.',
-            status = 'sent',
-        )
+        # No removal message — provider identity is hidden from clients
 
         return Response(
             ChatRoomSerializer(room).data,
@@ -311,7 +301,6 @@ class InviteClientView(APIView):
         room = get_object_or_404(ChatRoom, pk=room_id)
         user = request.user
 
-        # Admin can use client_id, regular members use phone_number
         if user.role == 'admin':
             client_id = request.data.get('client_id')
             if not client_id:
@@ -319,7 +308,6 @@ class InviteClientView(APIView):
             from accounts.models import CustomUser
             invitee = get_object_or_404(CustomUser, pk=client_id, role='client')
         else:
-            # Regular members can only invite by phone number
             if not (user.id == room.client_id or
                     room.extra_clients.filter(id=user.id).exists()):
                 return Response({'error': 'Not a room member.'}, status=403)
@@ -351,12 +339,7 @@ class InviteClientView(APIView):
 
         room.extra_clients.add(invitee)
 
-        Message.objects.create(
-            room   = room,
-            sender = user,
-            body   = f'{invitee.display_name} has been invited to the room.',
-            status = 'sent',
-        )
+        # No invite message — keep room activity private
 
         return Response(ChatRoomSerializer(room).data, status=200)
 
@@ -383,12 +366,7 @@ class RemoveClientView(APIView):
 
         room.extra_clients.remove(client)
 
-        Message.objects.create(
-            room   = room,
-            sender = request.user,
-            body   = f'{client.display_name} has been removed from the room.',
-            status = 'sent',
-        )
+        # No removal message — keep room activity private
 
         return Response(ChatRoomSerializer(room).data, status=200)
 

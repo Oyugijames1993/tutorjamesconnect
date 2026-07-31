@@ -444,6 +444,22 @@ export default function ChatRoom() {
     return courseName
   }
 
+  // ── Provider coded name — TutorJames1, TutorJames2 etc for clients ─────────
+  // Admin and provider see real names; clients see coded names
+  const getProviderDisplayName = (name, index = 0) => {
+    if (isAdmin || isProvider) return name
+    return `TutorJames${index + 1}`
+  }
+
+  // ── Role label — client sees Professor/Student instead of provider/client ──
+  const roleLabel = (role) => {
+    if (!isAdmin && !isProvider) {
+      if (role === 'provider') return 'Professor'
+      if (role === 'client')   return 'Student'
+    }
+    return role
+  }
+
   // ── CHANGE 4: Helper — returns the client's real first+last name ──────────
   const clientRealName = (clientObj) => {
     if (!clientObj) return 'Client'
@@ -525,7 +541,7 @@ export default function ChatRoom() {
                   <div style={S.userName}>{sidebarDisplayName()}</div>
                 )}
                 <span style={{ ...S.rolePill, background: roleStyle(user?.role).bg, color: roleStyle(user?.role).text }}>
-                  {user?.role || 'client'}
+                  {roleLabel(user?.role || 'client')}
                 </span>
               </div>
             </div>
@@ -675,8 +691,12 @@ export default function ChatRoom() {
                     <div style={{ ...S.msgAv, background: avatarBg(msg.sender) }}>{msg.sender?.[0]?.toUpperCase()}</div>
                     <div style={{ maxWidth: '60%' }}>
                       <div style={S.msgMeta}>
-                        <span style={S.msgSender}>{msg.sender}</span>
-                        {msg.role && <span style={{ ...S.rolePill, background: roleStyle(msg.role).bg, color: roleStyle(msg.role).text }}>{msg.role}</span>}
+                        <span style={S.msgSender}>
+                          {msg.role === 'provider'
+                            ? getProviderDisplayName(msg.sender, (activeRoom.providers || []).findIndex(p => p.display_name === msg.sender))
+                            : msg.sender}
+                        </span>
+                        {msg.role && <span style={{ ...S.rolePill, background: roleStyle(msg.role).bg, color: roleStyle(msg.role).text }}>{roleLabel(msg.role)}</span>}
                       </div>
                       <div style={{
                         ...S.fileBubble,
@@ -739,8 +759,14 @@ export default function ChatRoom() {
                   <div style={{ maxWidth: '62%' }}>
                     {!isMe && (
                       <div style={{ ...S.msgMeta, justifyContent: 'flex-start' }}>
-                        <span style={S.msgSender}>{msg.sender}</span>
-                        <span style={{ ...S.rolePill, background: roleStyle(sRole).bg, color: roleStyle(sRole).text }}>{sRole}</span>
+                        <span style={S.msgSender}>
+                          {sRole === 'provider'
+                            ? getProviderDisplayName(msg.sender, (activeRoom.providers || []).findIndex(p => p.display_name === msg.sender))
+                            : msg.sender}
+                        </span>
+                        <span style={{ ...S.rolePill, background: roleStyle(sRole).bg, color: roleStyle(sRole).text }}>
+                          {roleLabel(sRole)}
+                        </span>
                       </div>
                     )}
                     <div style={{
@@ -922,14 +948,16 @@ export default function ChatRoom() {
                           <div style={S.memberName}>
                             {m.isYou && !isAdmin && !isProvider
                               ? `${sidebarDisplayName() || clientRealName(activeRoom?.client)} (You)`
-                              : m.name + (m.isYou ? ' (You)' : '')}
+                              : m.role === 'provider' && !isAdmin && !isProvider
+                                ? getProviderDisplayName(m.name, (activeRoom.providers || []).findIndex(p => p.display_name === m.name))
+                                : m.name + (m.isYou ? ' (You)' : '')}
                           </div>
                           <div style={{ fontSize: 11, color: m.online ? C.green : C.textFaint, marginTop: 1 }}>
                             {m.online ? '● Online' : '● Offline'}
                           </div>
                         </div>
                         <span style={{ ...S.rolePill, background: roleStyle(m.role).bg, color: roleStyle(m.role).text }}>
-                          {m.role.charAt(0).toUpperCase() + m.role.slice(1)}
+                          {roleLabel(m.role).charAt(0).toUpperCase() + roleLabel(m.role).slice(1)}
                         </span>
                         {isAdmin && (m.isProvider || m.isExtraClient) && (
                           <button style={S.removeBtn} title="Remove from room" onClick={async () => {
@@ -1218,4 +1246,5 @@ const S = {
   pendCard:     { background: '#fef6e0', border: '1px solid #f0dca0', borderRadius: 9, padding: '9px 11px', marginBottom: 7 },
   closeRoomBtn: { width: '100%', padding: '8px', border: '1px solid #feb2b2', borderRadius: 20, background: '#fff5f5', color: '#e53e3e', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'inherit' },
 }
+
 
