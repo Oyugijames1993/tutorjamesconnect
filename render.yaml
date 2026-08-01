@@ -28,6 +28,7 @@ services:
   - type: redis
     name: tutorjamesconnect-redis
     plan: free
+    ipAllowList: []
 
 databases:
   - name: tutorjamesconnect-db
