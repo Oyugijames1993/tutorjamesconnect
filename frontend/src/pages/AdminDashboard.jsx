@@ -18,6 +18,7 @@ export default function AdminDashboard() {
   const [accessRequests, setAccessRequests] = useState([])
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState('')
+  const [showSidebar, setShowSidebar] = useState(false)
 
   const [newRoom, setNewRoom]         = useState({ name: '', client_id: '' })
   const [roomMsg, setRoomMsg]         = useState('')
@@ -28,6 +29,8 @@ export default function AdminDashboard() {
       return
     }
     loadAll()
+    // On desktop show sidebar by default
+    if (window.innerWidth >= 768) setShowSidebar(true)
   }, [])
 
   const loadAll = async () => {
@@ -61,10 +64,7 @@ export default function AdminDashboard() {
       return
     }
     try {
-      await api.post('/chat/rooms/create/', {
-        name:      newRoom.name,
-        client_id: newRoom.client_id,
-      })
+      await api.post('/chat/rooms/create/', { name: newRoom.name, client_id: newRoom.client_id })
       setRoomMsg('✅ Room created successfully!')
       setNewRoom({ name: '', client_id: '' })
       loadAll()
@@ -78,9 +78,7 @@ export default function AdminDashboard() {
       await api.post('/chat/admin/messages/' + id + '/approve/')
       setPending(prev => prev.filter(p => p.id !== id))
       setOverview(prev => ({ ...prev, pending_messages: prev.pending_messages - 1 }))
-    } catch {
-      setError('Failed to approve message.')
-    }
+    } catch { setError('Failed to approve message.') }
   }
 
   const rejectMessage = async (id) => {
@@ -88,9 +86,7 @@ export default function AdminDashboard() {
       await api.post('/chat/admin/messages/' + id + '/reject/')
       setPending(prev => prev.filter(p => p.id !== id))
       setOverview(prev => ({ ...prev, pending_messages: prev.pending_messages - 1 }))
-    } catch {
-      setError('Failed to reject message.')
-    }
+    } catch { setError('Failed to reject message.') }
   }
 
   const approveFile = async (id) => {
@@ -98,9 +94,7 @@ export default function AdminDashboard() {
       await api.post('/chat/admin/files/' + id + '/approve/')
       setPendingFiles(prev => prev.filter(f => f.id !== id))
       setOverview(prev => ({ ...prev, pending_files: prev.pending_files - 1 }))
-    } catch {
-      setError('Failed to approve file.')
-    }
+    } catch { setError('Failed to approve file.') }
   }
 
   const rejectFile = async (id) => {
@@ -108,9 +102,7 @@ export default function AdminDashboard() {
       await api.post('/chat/admin/files/' + id + '/reject/')
       setPendingFiles(prev => prev.filter(f => f.id !== id))
       setOverview(prev => ({ ...prev, pending_files: prev.pending_files - 1 }))
-    } catch {
-      setError('Failed to reject file.')
-    }
+    } catch { setError('Failed to reject file.') }
   }
 
   const totalPending = pending.length + pendingFiles.length
@@ -124,88 +116,131 @@ export default function AdminDashboard() {
     { id: 'access',    label: `🔐 Access Requests ${accessRequests.length > 0 ? '(' + accessRequests.length + ')' : ''}` },
   ]
 
+  const handleTabClick = (tabId) => {
+    setActiveTab(tabId)
+    // On mobile close sidebar after selecting a tab
+    if (window.innerWidth < 768) setShowSidebar(false)
+  }
+
   if (loading) return (
-    <div style={styles.loadingScreen}>
-      <div style={styles.loadingText}>Loading dashboard...</div>
+    <div style={S.loadingScreen}>
+      <div style={S.loadingText}>Loading dashboard...</div>
     </div>
   )
 
   return (
-    <div style={styles.app}>
+    <div style={S.app}>
       <style>{`
+        * { box-sizing: border-box; }
         .tjc-nav-item:hover { background: #f0f2f5 !important; }
         .tjc-refresh:hover { border-color: #00a884 !important; color: #00a884 !important; }
         .tjc-open-btn:hover { background: #e7f8f3 !important; }
         .tjc-create-btn:hover { filter: brightness(1.06); }
         .tjc-chat-btn:hover { background: #00a884 !important; color: #fff !important; }
-        .tjc-logout-btn:hover { color: #e53e3e !important; border-color: #feb2b2 !important; background: #fff5f5 !important; }
+        .tjc-logout-btn:hover { color: #e53e3e !important; border-color: #feb2b2 !important; }
         .tjc-approve-btn:hover { background: #d9f4e3 !important; }
         .tjc-reject-btn:hover { background: #fde3e3 !important; }
         .tjc-table-row:hover { background: #f7f9fa !important; }
         .tjc-view-all:hover { background: #e7f8f3 !important; }
-        .tjc-whatsapp-btn:hover { filter: brightness(1.06); }
+        .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 99; }
+        .overlay.visible { display: block; }
+        @media (max-width: 767px) {
+          .sidebar-panel {
+            position: fixed !important;
+            left: 0; top: 0; bottom: 0;
+            width: 280px !important;
+            z-index: 100;
+            transform: translateX(-100%);
+            transition: transform 0.25s ease;
+          }
+          .sidebar-panel.open { transform: translateX(0) !important; }
+          .stats-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 10px !important; }
+          .form-row { flex-direction: column !important; }
+          .form-row input, .form-row select, .form-row button { width: 100% !important; }
+          .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+          .content-area { padding: 14px !important; }
+          .header-area { padding: 12px 16px !important; }
+          .header-title { font-size: 16px !important; }
+        }
       `}</style>
 
+      {/* Overlay for mobile sidebar */}
+      <div
+        className={`overlay${showSidebar && window.innerWidth < 768 ? ' visible' : ''}`}
+        onClick={() => setShowSidebar(false)}
+      />
+
       {/* ── SIDEBAR ── */}
-      <div style={styles.sidebar}>
-        <div style={styles.sidebarHeader}>
-          <div style={styles.logo}>TutorJamesConnect</div>
-          <div style={styles.logoSub}>Admin Dashboard</div>
+      <div className={`sidebar-panel${showSidebar ? ' open' : ''}`} style={S.sidebar}>
+        <div style={S.sidebarHeader}>
+          <div style={S.logo}>TutorJamesConnect</div>
+          <div style={S.logoSub}>Admin Dashboard</div>
         </div>
 
-        <div style={styles.userInfo}>
-          <div style={styles.avatar}>A</div>
+        <div style={S.userInfo}>
+          <div style={S.avatar}>A</div>
           <div>
-            <div style={styles.userName}>{user?.display_name || 'Admin'}</div>
-            <div style={styles.userRole}>Administrator</div>
+            <div style={S.userName}>{user?.display_name || 'Admin'}</div>
+            <div style={S.userRole}>Administrator</div>
           </div>
         </div>
 
-        <div style={styles.navList}>
+        <div style={S.navList}>
           {tabs.map(tab => (
             <div
               key={tab.id}
               className="tjc-nav-item"
               style={{
-                ...styles.navItem,
+                ...S.navItem,
                 background: activeTab === tab.id ? '#00a884' : 'transparent',
                 color:      activeTab === tab.id ? '#fff' : '#1a1a1a',
               }}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabClick(tab.id)}
             >
               {tab.label}
             </div>
           ))}
         </div>
 
-        <div style={styles.sidebarBottom}>
-          <button className="tjc-chat-btn" style={styles.chatBtn} onClick={() => navigate('/chat/1')}>
+        <div style={S.sidebarBottom}>
+          <button className="tjc-chat-btn" style={S.chatBtn} onClick={() => navigate('/chat/1')}>
             💬 Go to Chat
           </button>
-          <button className="tjc-logout-btn" style={styles.logoutBtn} onClick={logout}>
+          <button className="tjc-logout-btn" style={S.logoutBtn} onClick={logout}>
             Sign Out
           </button>
         </div>
       </div>
 
       {/* ── MAIN CONTENT ── */}
-      <div style={styles.main}>
+      <div style={S.main}>
 
-        <div style={styles.header}>
-          <div style={styles.headerTitle}>
-            {tabs.find(t => t.id === activeTab)?.label}
+        {/* Header */}
+        <div className="header-area" style={S.header}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {/* Hamburger button */}
+            <button
+              style={S.hamburger}
+              onClick={() => setShowSidebar(v => !v)}
+              aria-label="Toggle menu"
+            >
+              ☰
+            </button>
+            <div className="header-title" style={S.headerTitle}>
+              {tabs.find(t => t.id === activeTab)?.label}
+            </div>
           </div>
-          <button className="tjc-refresh" style={styles.refreshBtn} onClick={loadAll}>
-            🔄 Refresh
+          <button className="tjc-refresh" style={S.refreshBtn} onClick={loadAll}>
+            🔄
           </button>
         </div>
 
-        {error && <div style={styles.errorBanner}>{error}</div>}
+        {error && <div style={S.errorBanner}>{error}</div>}
 
         {/* ── OVERVIEW TAB ── */}
         {activeTab === 'overview' && overview && (
-          <div style={styles.content}>
-            <div style={styles.statsGrid}>
+          <div className="content-area" style={S.content}>
+            <div className="stats-grid" style={S.statsGrid}>
               {[
                 { label: 'Total Clients',    value: overview.total_clients,    color: '#00a884', bg: '#e7f8f3' },
                 { label: 'Total Providers',  value: overview.total_providers,  color: '#1a7a4a', bg: '#f0fff6' },
@@ -214,44 +249,43 @@ export default function AdminDashboard() {
                 { label: 'Pending Messages', value: overview.pending_messages, color: '#e53e3e', bg: '#fae6e6' },
                 { label: 'Pending Files',    value: overview.pending_files,    color: '#e53e3e', bg: '#fae6e6' },
               ].map(s => (
-                <div key={s.label} style={{ ...styles.statCard, background: s.bg }}>
-                  <div style={{ ...styles.statValue, color: s.color }}>{s.value}</div>
-                  <div style={styles.statLabel}>{s.label}</div>
+                <div key={s.label} style={{ ...S.statCard, background: s.bg }}>
+                  <div style={{ ...S.statValue, color: s.color }}>{s.value}</div>
+                  <div style={S.statLabel}>{s.label}</div>
                 </div>
               ))}
             </div>
 
             {totalPending > 0 && (
-              <div style={styles.section}>
-                <div style={styles.sectionTitle}>⚠️ Items Requiring Approval</div>
+              <div style={S.section}>
+                <div style={S.sectionTitle}>⚠️ Items Requiring Approval</div>
                 {pending.slice(0, 3).map(p => (
-                  <div key={p.id} style={styles.pendingCard}>
-                    <div style={styles.pendingInfo}>
-                      <span style={styles.pendingFrom}>{p.sender?.display_name}</span>
-                      <span style={styles.pendingReason}>⚠️ {p.flag_reason}</span>
+                  <div key={p.id} style={S.pendingCard}>
+                    <div style={S.pendingInfo}>
+                      <span style={S.pendingFrom}>{p.sender?.display_name}</span>
+                      <span style={S.pendingReason}>⚠️ {p.flag_reason}</span>
                     </div>
-                    <div style={styles.pendingBody}>"{p.body}"</div>
-                    <div style={styles.pendingBtns}>
-                      <button className="tjc-approve-btn" style={styles.approveBtn} onClick={() => approveMessage(p.id)}>✓ Approve</button>
-                      <button className="tjc-reject-btn" style={styles.rejectBtn} onClick={() => rejectMessage(p.id)}>✕ Reject</button>
+                    <div style={S.pendingBody}>"{p.body}"</div>
+                    <div style={S.pendingBtns}>
+                      <button className="tjc-approve-btn" style={S.approveBtn} onClick={() => approveMessage(p.id)}>✓ Approve</button>
+                      <button className="tjc-reject-btn" style={S.rejectBtn} onClick={() => rejectMessage(p.id)}>✕ Reject</button>
                     </div>
                   </div>
                 ))}
                 {pendingFiles.slice(0, 2).map(f => (
-                  <div key={f.id} style={{ ...styles.pendingCard, background: '#e7f8f3', border: '1px solid #b6e6d8' }}>
-                    <div style={styles.pendingInfo}>
-                      <span style={styles.pendingFrom}>{f.sender?.display_name}</span>
+                  <div key={f.id} style={{ ...S.pendingCard, background: '#e7f8f3', border: '1px solid #b6e6d8' }}>
+                    <div style={S.pendingInfo}>
+                      <span style={S.pendingFrom}>{f.sender?.display_name}</span>
                       <span style={{ fontSize: 12, color: '#00a884' }}>📎 {f.file_name}</span>
-                      <span style={{ fontSize: 11, color: '#888' }}>{f.file_size_display}</span>
                     </div>
-                    <div style={styles.pendingBtns}>
-                      <button className="tjc-approve-btn" style={styles.approveBtn} onClick={() => approveFile(f.id)}>✓ Approve</button>
-                      <button className="tjc-reject-btn" style={styles.rejectBtn} onClick={() => rejectFile(f.id)}>✕ Reject</button>
+                    <div style={S.pendingBtns}>
+                      <button className="tjc-approve-btn" style={S.approveBtn} onClick={() => approveFile(f.id)}>✓ Approve</button>
+                      <button className="tjc-reject-btn" style={S.rejectBtn} onClick={() => rejectFile(f.id)}>✕ Reject</button>
                     </div>
                   </div>
                 ))}
                 {totalPending > 5 && (
-                  <button className="tjc-view-all" style={styles.viewAllBtn} onClick={() => setActiveTab('pending')}>
+                  <button className="tjc-view-all" style={S.viewAllBtn} onClick={() => setActiveTab('pending')}>
                     View all {totalPending} pending items →
                   </button>
                 )}
@@ -262,233 +296,154 @@ export default function AdminDashboard() {
 
         {/* ── CLIENTS TAB ── */}
         {activeTab === 'clients' && (
-          <div style={styles.content}>
-            <div style={styles.section}>
-              <div style={styles.sectionTitle}>All Clients ({clients.length})</div>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    {['Client ID', 'Email', 'Phone', 'Verified', 'Joined', 'Action'].map(h => (
-                      <th key={h} style={styles.th}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {clients.map((c, i) => (
-                    <tr key={c.id} className="tjc-table-row" style={{ background: i % 2 === 0 ? '#fff' : '#f9f9f9' }}>
-                      <td style={styles.td}>
-                        <span style={styles.clientId}>{c.display_name || c.client_id}</span>
-                      </td>
-                      <td style={styles.td}>{c.email}</td>
-                      <td style={styles.td}>{c.phone_number || '—'}</td>
-                      <td style={styles.td}>
-                        <span style={{
-                          ...styles.badge,
-                          background: c.is_verified ? '#e6f4ed' : '#fae6e6',
-                          color:      c.is_verified ? '#1a7a4a' : '#a0251a',
-                        }}>
-                          {c.is_verified ? '✓ Verified' : '✗ Unverified'}
-                        </span>
-                      </td>
-                      <td style={styles.td}>
-                        {c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}
-                      </td>
-                      <td style={styles.td}>
-                        <button
-                          className="tjc-open-btn" style={styles.openBtn}
-                          onClick={() => {
-                            setNewRoom({ name: '', client_id: c.id })
-                            setActiveTab('rooms')
-                          }}
-                        >
-                          + Create Room
-                        </button>
-                      </td>
+          <div className="content-area" style={S.content}>
+            <div style={S.section}>
+              <div style={S.sectionTitle}>All Clients ({clients.length})</div>
+              <div className="table-wrap">
+                <table style={S.table}>
+                  <thead>
+                    <tr>
+                      {['Client ID', 'Email', 'Phone', 'Verified', 'Joined', 'Action'].map(h => (
+                        <th key={h} style={S.th}>{h}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {clients.map((c, i) => (
+                      <tr key={c.id} className="tjc-table-row" style={{ background: i % 2 === 0 ? '#fff' : '#f9f9f9' }}>
+                        <td style={S.td}><span style={S.clientId}>{c.display_name || c.client_id}</span></td>
+                        <td style={S.td}>{c.email}</td>
+                        <td style={S.td}>{c.phone_number || '—'}</td>
+                        <td style={S.td}>
+                          <span style={{ ...S.badge, background: c.is_verified ? '#e6f4ed' : '#fae6e6', color: c.is_verified ? '#1a7a4a' : '#a0251a' }}>
+                            {c.is_verified ? '✓' : '✗'}
+                          </span>
+                        </td>
+                        <td style={S.td}>{c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}</td>
+                        <td style={S.td}>
+                          <button className="tjc-open-btn" style={S.openBtn}
+                            onClick={() => { setNewRoom({ name: '', client_id: c.id }); setActiveTab('rooms') }}>
+                            + Room
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
 
         {/* ── PROVIDERS TAB ── */}
         {activeTab === 'providers' && (
-          <div style={styles.content}>
-            <div style={styles.section}>
-              <div style={styles.sectionTitle}>All Providers ({providers.length})</div>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    {['Name', 'Email', 'Phone', 'Specialisation', 'Rate (Ksh/page)', 'Verified', 'Joined'].map(h => (
-                      <th key={h} style={styles.th}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {providers.map((p, i) => (
-                    <tr key={p.id} className="tjc-table-row" style={{ background: i % 2 === 0 ? '#fff' : '#f9f9f9' }}>
-                      <td style={styles.td}>
-                        <span style={styles.providerName}>{p.display_name}</span>
-                      </td>
-                      <td style={styles.td}>{p.email}</td>
-                      <td style={styles.td}>{p.phone_number || '—'}</td>
-                      <td style={styles.td}>{p.provider_profile?.specialisation || '—'}</td>
-                      <td style={styles.td}>
-                        {p.provider_profile
-                          ? 'Ksh ' + p.provider_profile.rate_min + ' — ' + p.provider_profile.rate_max
-                          : '—'}
-                      </td>
-                      <td style={styles.td}>
-                        <span style={{
-                          ...styles.badge,
-                          background: p.is_verified ? '#e6f4ed' : '#fae6e6',
-                          color:      p.is_verified ? '#1a7a4a' : '#a0251a',
-                        }}>
-                          {p.is_verified ? '✓ Verified' : '✗ Unverified'}
-                        </span>
-                      </td>
-                      <td style={styles.td}>
-                        {p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'}
-                      </td>
+          <div className="content-area" style={S.content}>
+            <div style={S.section}>
+              <div style={S.sectionTitle}>All Providers ({providers.length})</div>
+              <div className="table-wrap">
+                <table style={S.table}>
+                  <thead>
+                    <tr>
+                      {['Name', 'Email', 'Phone', 'Specialisation', 'Rate', 'Verified'].map(h => (
+                        <th key={h} style={S.th}>{h}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {providers.map((p, i) => (
+                      <tr key={p.id} className="tjc-table-row" style={{ background: i % 2 === 0 ? '#fff' : '#f9f9f9' }}>
+                        <td style={S.td}><span style={S.providerName}>{p.display_name}</span></td>
+                        <td style={S.td}>{p.email}</td>
+                        <td style={S.td}>{p.phone_number || '—'}</td>
+                        <td style={S.td}>{p.provider_profile?.specialisation || '—'}</td>
+                        <td style={S.td}>{p.provider_profile ? 'Ksh ' + p.provider_profile.rate_min + '–' + p.provider_profile.rate_max : '—'}</td>
+                        <td style={S.td}>
+                          <span style={{ ...S.badge, background: p.is_verified ? '#e6f4ed' : '#fae6e6', color: p.is_verified ? '#1a7a4a' : '#a0251a' }}>
+                            {p.is_verified ? '✓' : '✗'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
 
         {/* ── CHAT ROOMS TAB ── */}
         {activeTab === 'rooms' && (
-          <div style={styles.content}>
-
-            <div style={styles.section}>
-              <div style={styles.sectionTitle}>➕ Create New Chat Room</div>
-              <div style={styles.formRow}>
+          <div className="content-area" style={S.content}>
+            <div style={S.section}>
+              <div style={S.sectionTitle}>➕ Create New Chat Room</div>
+              <div className="form-row" style={S.formRow}>
                 <input
-                  style={styles.formInput}
-                  placeholder="Room name e.g. Research Paper"
+                  style={S.formInput}
+                  placeholder="Course name e.g. BSc Computer Science"
                   value={newRoom.name}
                   onChange={e => setNewRoom({ ...newRoom, name: e.target.value })}
                 />
                 <select
-                  style={styles.formSelect}
+                  style={S.formSelect}
                   value={newRoom.client_id}
                   onChange={e => setNewRoom({ ...newRoom, client_id: e.target.value })}
                 >
                   <option value="">Select a client</option>
                   {clients.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.display_name || c.client_id}
-                    </option>
+                    <option key={c.id} value={c.id}>{c.display_name || c.client_id}</option>
                   ))}
                 </select>
-                <button className="tjc-create-btn" style={styles.createBtn} onClick={createRoom}>
+                <button className="tjc-create-btn" style={S.createBtn} onClick={createRoom}>
                   Create Room
                 </button>
               </div>
-              {roomMsg && (
-                <div style={{
-                  ...styles.roomMsg,
-                  color: roomMsg.startsWith('✅') ? '#1a7a4a' : '#a0251a',
-                }}>
-                  {roomMsg}
-                </div>
-              )}
+              {roomMsg && <div style={{ ...S.roomMsg, color: roomMsg.startsWith('✅') ? '#1a7a4a' : '#a0251a' }}>{roomMsg}</div>}
             </div>
 
-            {/* Per-room pending items */}
             {rooms.map(r => {
               const roomPendingMsgs  = pending.filter(p => p.room === r.id)
               const roomPendingFiles = pendingFiles.filter(f => f.room === r.id)
               const hasPending = roomPendingMsgs.length > 0 || roomPendingFiles.length > 0
-
               return (
-                <div key={r.id} style={{
-                  ...styles.section,
-                  border: hasPending ? '1.5px solid #f0d080' : '1px solid #e5e5e5',
-                  background: hasPending ? '#fffdf0' : '#fff',
-                }}>
-                  {/* Room header */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>
+                <div key={r.id} style={{ ...S.section, border: hasPending ? '1.5px solid #f0d080' : '1px solid #e5e5e5', background: hasPending ? '#fffdf0' : '#fff' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', wordBreak: 'break-word' }}>
                         {r.name}
-                        {hasPending && (
-                          <span style={{ marginLeft: 8, fontSize: 11, background: '#e53e3e', color: '#fff', borderRadius: 10, padding: '2px 7px' }}>
-                            {roomPendingMsgs.length + roomPendingFiles.length} pending
-                          </span>
-                        )}
+                        {hasPending && <span style={{ marginLeft: 8, fontSize: 11, background: '#e53e3e', color: '#fff', borderRadius: 10, padding: '2px 7px' }}>{roomPendingMsgs.length + roomPendingFiles.length} pending</span>}
                       </div>
                       <div style={{ fontSize: 12, color: '#888', marginTop: 3 }}>
-                        Client: {r.client?.display_name || '—'} ·{' '}
-                        Providers: {(r.providers || []).map(p => p.display_name).join(', ') || '— Not assigned'} ·{' '}
-                        <span style={{
-                          color: r.status === 'active' ? '#1a7a4a' : r.status === 'negotiating' ? '#BA7517' : '#888',
-                          fontWeight: 600,
-                        }}>
-                          {r.status}
-                        </span>
+                        Client: {r.client?.display_name || '—'} · <span style={{ color: r.status === 'active' ? '#1a7a4a' : r.status === 'negotiating' ? '#BA7517' : '#888', fontWeight: 600 }}>{r.status}</span>
                       </div>
                     </div>
-                    <button className="tjc-open-btn" style={styles.openBtn} onClick={() => navigate('/chat/' + r.id)}>
-                      Open →
-                    </button>
+                    <button className="tjc-open-btn" style={{ ...S.openBtn, flexShrink: 0 }} onClick={() => navigate('/chat/' + r.id)}>Open →</button>
                   </div>
-
-                  {/* Pending messages for this room */}
-                  {roomPendingMsgs.length > 0 && (
-                    <div style={{ marginBottom: 10 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#BA7517', marginBottom: 6 }}>
-                        ⚠️ Pending Messages ({roomPendingMsgs.length})
+                  {roomPendingMsgs.map(p => (
+                    <div key={p.id} style={S.pendingCard}>
+                      <div style={S.pendingInfo}>
+                        <span style={S.pendingFrom}>{p.sender?.display_name}</span>
+                        <span style={S.pendingReason}>⚠️ {p.flag_reason}</span>
                       </div>
-                      {roomPendingMsgs.map(p => (
-                        <div key={p.id} style={styles.pendingCard}>
-                          <div style={styles.pendingInfo}>
-                            <span style={styles.pendingFrom}>{p.sender?.display_name}</span>
-                            <span style={styles.pendingReason}>⚠️ {p.flag_reason}</span>
-                            <span style={styles.pendingTime}>{new Date(p.timestamp).toLocaleString()}</span>
-                          </div>
-                          <div style={styles.pendingBody}>"{p.body}"</div>
-                          <div style={styles.pendingBtns}>
-                            <button className="tjc-approve-btn" style={styles.approveBtn} onClick={() => approveMessage(p.id)}>✓ Approve</button>
-                            <button className="tjc-reject-btn" style={styles.rejectBtn} onClick={() => rejectMessage(p.id)}>✕ Reject</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Pending files for this room */}
-                  {roomPendingFiles.length > 0 && (
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#00a884', marginBottom: 6 }}>
-                        📎 Pending Files ({roomPendingFiles.length})
+                      <div style={S.pendingBody}>"{p.body}"</div>
+                      <div style={S.pendingBtns}>
+                        <button className="tjc-approve-btn" style={S.approveBtn} onClick={() => approveMessage(p.id)}>✓ Approve</button>
+                        <button className="tjc-reject-btn" style={S.rejectBtn} onClick={() => rejectMessage(p.id)}>✕ Reject</button>
                       </div>
-                      {roomPendingFiles.map(f => (
-                        <div key={f.id} style={{ ...styles.pendingCard, background: '#e7f8f3', border: '1px solid #b6e6d8' }}>
-                          <div style={styles.pendingInfo}>
-                            <span style={styles.pendingFrom}>{f.sender?.display_name}</span>
-                            <span style={{ fontSize: 12, color: '#00a884', fontWeight: 500 }}>
-                              📄 {f.file_name}
-                            </span>
-                            <span style={{ fontSize: 11, color: '#888' }}>{f.file_size_display}</span>
-                          </div>
-                          <div style={styles.pendingBtns}>
-                            <button className="tjc-approve-btn" style={styles.approveBtn} onClick={() => approveFile(f.id)}>✓ Approve</button>
-                            <button className="tjc-reject-btn" style={styles.rejectBtn} onClick={() => rejectFile(f.id)}>✕ Reject</button>
-                          </div>
-                        </div>
-                      ))}
                     </div>
-                  )}
-
-                  {!hasPending && (
-                    <div style={{ fontSize: 12, color: '#aaa', textAlign: 'center', padding: '4px 0' }}>
-                      ✅ No pending items
+                  ))}
+                  {roomPendingFiles.map(f => (
+                    <div key={f.id} style={{ ...S.pendingCard, background: '#e7f8f3', border: '1px solid #b6e6d8' }}>
+                      <div style={S.pendingInfo}>
+                        <span style={S.pendingFrom}>{f.sender?.display_name}</span>
+                        <span style={{ fontSize: 12, color: '#00a884' }}>📄 {f.file_name}</span>
+                      </div>
+                      <div style={S.pendingBtns}>
+                        <button className="tjc-approve-btn" style={S.approveBtn} onClick={() => approveFile(f.id)}>✓ Approve</button>
+                        <button className="tjc-reject-btn" style={S.rejectBtn} onClick={() => rejectFile(f.id)}>✕ Reject</button>
+                      </div>
                     </div>
-                  )}
+                  ))}
+                  {!hasPending && <div style={{ fontSize: 12, color: '#aaa', textAlign: 'center' }}>✅ No pending items</div>}
                 </div>
               )
             })}
@@ -497,137 +452,75 @@ export default function AdminDashboard() {
 
         {/* ── PENDING TAB ── */}
         {activeTab === 'pending' && (
-          <div style={styles.content}>
-
-            {/* Pending Messages */}
-            <div style={styles.section}>
-              <div style={styles.sectionTitle}>
-                Pending Messages ({pending.length})
-              </div>
-              {pending.length === 0 ? (
-                <div style={styles.emptyState}>✅ No pending messages</div>
-              ) : (
-                pending.map(p => (
-                  <div key={p.id} style={styles.pendingCard}>
-                    <div style={styles.pendingInfo}>
-                      <span style={styles.pendingFrom}>From: {p.sender?.display_name}</span>
-                      <span style={styles.pendingReason}>⚠️ {p.flag_reason}</span>
-                      <span style={styles.pendingTime}>{new Date(p.timestamp).toLocaleString()}</span>
-                    </div>
-                    <div style={styles.pendingBody}>"{p.body}"</div>
-                    <div style={styles.pendingBtns}>
-                      <button className="tjc-approve-btn" style={styles.approveBtn} onClick={() => approveMessage(p.id)}>
-                        ✓ Approve — deliver to room
-                      </button>
-                      <button className="tjc-reject-btn" style={styles.rejectBtn} onClick={() => rejectMessage(p.id)}>
-                        ✕ Reject — delete message
-                      </button>
-                    </div>
+          <div className="content-area" style={S.content}>
+            <div style={S.section}>
+              <div style={S.sectionTitle}>Pending Messages ({pending.length})</div>
+              {pending.length === 0 ? <div style={S.emptyState}>✅ No pending messages</div> : pending.map(p => (
+                <div key={p.id} style={S.pendingCard}>
+                  <div style={S.pendingInfo}>
+                    <span style={S.pendingFrom}>From: {p.sender?.display_name}</span>
+                    <span style={S.pendingReason}>⚠️ {p.flag_reason}</span>
+                    <span style={S.pendingTime}>{new Date(p.timestamp).toLocaleString()}</span>
                   </div>
-                ))
-              )}
-            </div>
-
-            {/* Pending Files */}
-            <div style={styles.section}>
-              <div style={styles.sectionTitle}>
-                Pending Files ({pendingFiles.length})
-              </div>
-              {pendingFiles.length === 0 ? (
-                <div style={styles.emptyState}>✅ No pending files</div>
-              ) : (
-                pendingFiles.map(f => (
-                  <div key={f.id} style={{ ...styles.pendingCard, background: '#e7f8f3', border: '1px solid #b6e6d8' }}>
-                    <div style={styles.pendingInfo}>
-                      <span style={styles.pendingFrom}>From: {f.sender?.display_name}</span>
-                      <span style={{ fontSize: 12, color: '#00a884', fontWeight: 500 }}>
-                        📄 {f.file_name}
-                      </span>
-                      <span style={{ fontSize: 11, color: '#888' }}>{f.file_size_display}</span>
-                      <span style={{ fontSize: 11, color: '#888' }}>Room: {f.room_name}</span>
-                    </div>
-                    <div style={styles.pendingBtns}>
-                      <button className="tjc-approve-btn" style={styles.approveBtn} onClick={() => approveFile(f.id)}>
-                        ✓ Approve — share in room
-                      </button>
-                      <button className="tjc-reject-btn" style={styles.rejectBtn} onClick={() => rejectFile(f.id)}>
-                        ✕ Reject — discard file
-                      </button>
-                    </div>
+                  <div style={S.pendingBody}>"{p.body}"</div>
+                  <div style={S.pendingBtns}>
+                    <button className="tjc-approve-btn" style={S.approveBtn} onClick={() => approveMessage(p.id)}>✓ Approve</button>
+                    <button className="tjc-reject-btn" style={S.rejectBtn} onClick={() => rejectMessage(p.id)}>✕ Reject</button>
                   </div>
-                ))
-              )}
+                </div>
+              ))}
             </div>
-
+            <div style={S.section}>
+              <div style={S.sectionTitle}>Pending Files ({pendingFiles.length})</div>
+              {pendingFiles.length === 0 ? <div style={S.emptyState}>✅ No pending files</div> : pendingFiles.map(f => (
+                <div key={f.id} style={{ ...S.pendingCard, background: '#e7f8f3', border: '1px solid #b6e6d8' }}>
+                  <div style={S.pendingInfo}>
+                    <span style={S.pendingFrom}>From: {f.sender?.display_name}</span>
+                    <span style={{ fontSize: 12, color: '#00a884' }}>📄 {f.file_name}</span>
+                    <span style={{ fontSize: 11, color: '#888' }}>{f.file_size_display} · {f.room_name}</span>
+                  </div>
+                  <div style={S.pendingBtns}>
+                    <button className="tjc-approve-btn" style={S.approveBtn} onClick={() => approveFile(f.id)}>✓ Approve</button>
+                    <button className="tjc-reject-btn" style={S.rejectBtn} onClick={() => rejectFile(f.id)}>✕ Reject</button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
         {/* ── ACCESS REQUESTS TAB ── */}
         {activeTab === 'access' && (
-          <div style={styles.content}>
-            <div style={styles.section}>
-              <div style={styles.sectionTitle}>
-                Pending Access Requests ({accessRequests.length})
-              </div>
+          <div className="content-area" style={S.content}>
+            <div style={S.section}>
+              <div style={S.sectionTitle}>Pending Access Requests ({accessRequests.length})</div>
               <div style={{ fontSize: 12, color: '#888', marginBottom: 16 }}>
-                Someone lost access and asked for a fresh link. Confirm it's really them, then send
-                the link over WhatsApp — nothing is sent automatically.
+                Confirm it's really them, then send the link via WhatsApp.
               </div>
-              {accessRequests.length === 0 ? (
-                <div style={styles.emptyState}>✅ No pending access requests</div>
-              ) : (
-                accessRequests.map(r => (
-                  <div key={r.id} style={styles.pendingCard}>
-                    <div style={styles.pendingInfo}>
-                      <span style={styles.pendingFrom}>{r.user_display}</span>
-                      <span style={{
-                        fontSize: 12, fontWeight: 600,
-                        color: r.role === 'provider' ? '#1a7a4a' : '#00a884',
-                      }}>
-                        {r.role === 'provider' ? '🎓 Provider' : '👤 Client'}
-                      </span>
-                      <span style={{ fontSize: 12, color: '#888' }}>
-                        {r.phone_number || 'No phone on file'}
-                      </span>
-                      <span style={styles.pendingTime}>
-                        {new Date(r.created_at).toLocaleString()}
-                      </span>
-                    </div>
-                    {!r.is_valid && (
-                      <div style={{ fontSize: 12, color: '#e53e3e', marginBottom: 8 }}>
-                        ⚠️ This link has expired — ask them to request access again.
-                      </div>
-                    )}
-                    {r.phone_number ? (
-                      <a
-                        className="tjc-whatsapp-btn"
-                        href={
-                          `https://wa.me/${r.phone_number.replace(/[^0-9]/g, '')}` +
-                          `?text=${encodeURIComponent(
-                            `Hi ${r.user_display}, here's your link back into TutorJamesConnect: ${r.magic_link}`
-                          )}`
-                        }
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          ...styles.approveBtn,
-                          display: 'inline-block',
-                          textDecoration: 'none',
-                          textAlign: 'center',
-                          opacity: r.is_valid ? 1 : 0.5,
-                          pointerEvents: r.is_valid ? 'auto' : 'none',
-                        }}
-                      >
-                        📲 Send via WhatsApp
-                      </a>
-                    ) : (
-                      <div style={{ fontSize: 12, color: '#888' }}>
-                        No phone number on file — can't send via WhatsApp.
-                      </div>
-                    )}
+              {accessRequests.length === 0 ? <div style={S.emptyState}>✅ No pending access requests</div> : accessRequests.map(r => (
+                <div key={r.id} style={S.pendingCard}>
+                  <div style={S.pendingInfo}>
+                    <span style={S.pendingFrom}>{r.user_display}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: r.role === 'provider' ? '#1a7a4a' : '#00a884' }}>
+                      {r.role === 'provider' ? '🎓 Provider' : '👤 Client'}
+                    </span>
+                    <span style={{ fontSize: 12, color: '#888' }}>{r.phone_number || 'No phone'}</span>
+                    <span style={S.pendingTime}>{new Date(r.created_at).toLocaleString()}</span>
                   </div>
-                ))
-              )}
+                  {!r.is_valid && <div style={{ fontSize: 12, color: '#e53e3e', marginBottom: 8 }}>⚠️ Link expired — ask them to request again.</div>}
+                  {r.phone_number ? (
+                    <a
+                      href={`https://wa.me/${r.phone_number.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${r.user_display}, here's your link back into TutorJamesConnect: ${r.magic_link}`)}`}
+                      target="_blank" rel="noreferrer"
+                      style={{ ...S.approveBtn, display: 'inline-block', textDecoration: 'none', textAlign: 'center', opacity: r.is_valid ? 1 : 0.5, pointerEvents: r.is_valid ? 'auto' : 'none' }}
+                    >
+                      📲 Send via WhatsApp
+                    </a>
+                  ) : (
+                    <div style={{ fontSize: 12, color: '#888' }}>No phone number on file.</div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -637,11 +530,11 @@ export default function AdminDashboard() {
   )
 }
 
-const styles = {
-  app: { display: 'flex', height: '100vh', fontFamily: "'Segoe UI', Helvetica, Arial, sans-serif", background: '#f5f5f5', overflow: 'hidden' },
+const S = {
+  app: { display: 'flex', height: '100vh', fontFamily: "'Segoe UI', Helvetica, Arial, sans-serif", background: '#f5f5f5', overflow: 'hidden', position: 'relative' },
   loadingScreen: { display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' },
   loadingText: { fontSize: '16px', color: '#888' },
-  sidebar: { width: '240px', background: '#ffffff', borderRight: '1px solid #e5e5e5', display: 'flex', flexDirection: 'column', flexShrink: 0, boxShadow: '2px 0 8px rgba(0,0,0,0.03)' },
+  sidebar: { width: '240px', background: '#ffffff', borderRight: '1px solid #e5e5e5', display: 'flex', flexDirection: 'column', flexShrink: 0, boxShadow: '2px 0 8px rgba(0,0,0,0.06)', overflowY: 'auto' },
   sidebarHeader: { padding: '20px 16px 12px', background: 'linear-gradient(135deg, #00a884, #054c40)' },
   logo: { color: '#ffffff', fontSize: '14px', fontWeight: '700' },
   logoSub: { color: '#a8e8dc', fontSize: '11px', marginTop: '3px' },
@@ -650,43 +543,44 @@ const styles = {
   userName: { fontSize: '13px', fontWeight: '600', color: '#1a1a1a' },
   userRole: { fontSize: '11px', color: '#888' },
   navList: { flex: 1, padding: '8px', overflowY: 'auto' },
-  navItem: { padding: '10px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', marginBottom: '4px', transition: 'background 0.15s' },
+  navItem: { padding: '12px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', marginBottom: '4px', transition: 'background 0.15s' },
   sidebarBottom: { padding: '12px', borderTop: '1px solid #f0f0f0', display: 'flex', flexDirection: 'column', gap: '8px' },
-  chatBtn: { padding: '8px', border: '1px solid #00a884', borderRadius: '8px', background: 'none', color: '#00a884', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
-  logoutBtn: { padding: '8px', border: '1px solid #ddd', borderRadius: '8px', background: 'none', color: '#888', fontSize: '13px', cursor: 'pointer' },
-  main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
-  header: { padding: '16px 24px', background: '#fff', borderBottom: '1px solid #e5e5e5', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
+  chatBtn: { padding: '10px', border: '1px solid #00a884', borderRadius: '8px', background: 'none', color: '#00a884', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
+  logoutBtn: { padding: '10px', border: '1px solid #ddd', borderRadius: '8px', background: 'none', color: '#888', fontSize: '13px', cursor: 'pointer' },
+  main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 },
+  header: { padding: '16px 24px', background: '#fff', borderBottom: '1px solid #e5e5e5', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 },
+  hamburger: { background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', color: '#555', padding: '4px 8px', borderRadius: '6px', lineHeight: 1 },
   headerTitle: { fontSize: '18px', fontWeight: '700', color: '#1a1a1a' },
-  refreshBtn: { padding: '7px 14px', border: '1px solid #ddd', borderRadius: '8px', background: 'none', color: '#555', fontSize: '13px', cursor: 'pointer' },
+  refreshBtn: { padding: '7px 12px', border: '1px solid #ddd', borderRadius: '8px', background: 'none', color: '#555', fontSize: '16px', cursor: 'pointer', flexShrink: 0 },
   errorBanner: { background: '#fae6e6', color: '#a0251a', padding: '10px 24px', fontSize: '13px' },
-  content: { flex: 1, overflowY: 'auto', padding: '24px' },
-  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' },
-  statCard: { padding: '20px', borderRadius: '12px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
-  statValue: { fontSize: '32px', fontWeight: '700', marginBottom: '6px' },
-  statLabel: { fontSize: '12px', color: '#888', fontWeight: '500' },
-  section: { background: '#fff', borderRadius: '12px', padding: '20px', marginBottom: '20px', border: '1px solid #e5e5e5' },
-  sectionTitle: { fontSize: '15px', fontWeight: '600', color: '#1a1a1a', marginBottom: '16px' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
-  th: { padding: '10px 14px', textAlign: 'left', background: '#f5f5f5', color: '#555', fontWeight: '600', fontSize: '12px', borderBottom: '1px solid #e5e5e5' },
-  td: { padding: '10px 14px', borderBottom: '1px solid #f0f0f0', color: '#1a1a1a' },
+  content: { flex: 1, overflowY: 'auto', padding: '20px' },
+  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '20px' },
+  statCard: { padding: '16px', borderRadius: '12px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
+  statValue: { fontSize: '28px', fontWeight: '700', marginBottom: '4px' },
+  statLabel: { fontSize: '11px', color: '#888', fontWeight: '500' },
+  section: { background: '#fff', borderRadius: '12px', padding: '16px', marginBottom: '16px', border: '1px solid #e5e5e5' },
+  sectionTitle: { fontSize: '15px', fontWeight: '600', color: '#1a1a1a', marginBottom: '14px' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '500px' },
+  th: { padding: '10px 12px', textAlign: 'left', background: '#f5f5f5', color: '#555', fontWeight: '600', fontSize: '12px', borderBottom: '1px solid #e5e5e5', whiteSpace: 'nowrap' },
+  td: { padding: '10px 12px', borderBottom: '1px solid #f0f0f0', color: '#1a1a1a' },
   badge: { padding: '3px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '600' },
   clientId: { fontWeight: '600', color: '#00a884', fontSize: '13px' },
   providerName: { fontWeight: '600', color: '#1a7a4a', fontSize: '13px' },
-  formRow: { display: 'flex', gap: '10px', alignItems: 'center' },
-  formInput: { flex: 1, padding: '9px 12px', borderRadius: '8px', border: '1.5px solid #ddd', fontSize: '13px', outline: 'none' },
-  formSelect: { flex: 1, padding: '9px 12px', borderRadius: '8px', border: '1.5px solid #ddd', fontSize: '13px', outline: 'none', background: '#fff', cursor: 'pointer' },
-  createBtn: { padding: '9px 20px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #00a884, #054c40)', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
+  formRow: { display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' },
+  formInput: { flex: 1, minWidth: '140px', padding: '9px 12px', borderRadius: '8px', border: '1.5px solid #ddd', fontSize: '13px', outline: 'none' },
+  formSelect: { flex: 1, minWidth: '140px', padding: '9px 12px', borderRadius: '8px', border: '1.5px solid #ddd', fontSize: '13px', outline: 'none', background: '#fff', cursor: 'pointer' },
+  createBtn: { padding: '9px 20px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #00a884, #054c40)', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' },
   roomMsg: { marginTop: '10px', fontSize: '13px', fontWeight: '500' },
-  openBtn: { padding: '5px 12px', borderRadius: '6px', border: '1px solid #00a884', background: 'none', color: '#00a884', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
-  pendingCard: { background: '#fff8e1', border: '1px solid #f0d080', borderRadius: '10px', padding: '14px', marginBottom: '10px' },
-  pendingInfo: { display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap' },
+  openBtn: { padding: '6px 14px', borderRadius: '6px', border: '1px solid #00a884', background: 'none', color: '#00a884', fontSize: '12px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' },
+  pendingCard: { background: '#fff8e1', border: '1px solid #f0d080', borderRadius: '10px', padding: '12px', marginBottom: '10px' },
+  pendingInfo: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap' },
   pendingFrom: { fontSize: '13px', fontWeight: '600', color: '#1a1a1a' },
   pendingReason: { fontSize: '12px', color: '#BA7517', fontWeight: '500' },
   pendingTime: { fontSize: '11px', color: '#aaa', marginLeft: 'auto' },
-  pendingBody: { fontSize: '14px', color: '#1a1a1a', marginBottom: '10px', fontStyle: 'italic' },
+  pendingBody: { fontSize: '13px', color: '#1a1a1a', marginBottom: '10px', fontStyle: 'italic', wordBreak: 'break-word' },
   pendingBtns: { display: 'flex', gap: '8px' },
   approveBtn: { flex: 1, padding: '7px', border: '1px solid #1a7a4a', borderRadius: '8px', background: 'none', color: '#1a7a4a', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
   rejectBtn: { flex: 1, padding: '7px', border: '1px solid #e53e3e', borderRadius: '8px', background: 'none', color: '#e53e3e', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
   viewAllBtn: { padding: '8px 16px', border: '1px solid #00a884', borderRadius: '8px', background: 'none', color: '#00a884', fontSize: '13px', cursor: 'pointer', marginTop: '8px' },
-  emptyState: { textAlign: 'center', fontSize: '14px', color: '#888', padding: '40px 0' },
+  emptyState: { textAlign: 'center', fontSize: '14px', color: '#888', padding: '30px 0' },
 }

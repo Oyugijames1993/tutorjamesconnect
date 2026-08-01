@@ -48,9 +48,9 @@ export default function ChatRoom() {
   const [activeRoom, setActiveRoom]           = useState(null)
   const [input, setInput]                     = useState('')
   const [replyingTo, setReplyingTo]            = useState(null)
-  const [showSidebar, setShowSidebar]         = useState(true)
+  const [showSidebar, setShowSidebar]         = useState(typeof window !== 'undefined' && window.innerWidth >= 768)
   const [rightTab, setRightTab]               = useState('members')
-  const [showRightPanel, setShowRightPanel]   = useState(true)
+  const [showRightPanel, setShowRightPanel]   = useState(typeof window !== 'undefined' && window.innerWidth >= 768)
   const [filesEnabled, setFilesEnabled]       = useState(true)
   const [providerNeedsApproval, setProviderNeedsApproval] = useState(true)
   const [clientNeedsApproval, setClientNeedsApproval]     = useState(false)
@@ -520,9 +520,19 @@ export default function ChatRoom() {
       <div style={{ ...S.app, height: 'auto', flex: 1, minHeight: 0 }}>
         <style>{css}</style>
 
+        {/* Mobile overlay */}
+        <div
+          className={"tjc-overlay" + (showSidebar && window.innerWidth < 768 ? " show" : "")}
+          onClick={() => setShowSidebar(false)}
+        />
+        <div
+          className={"tjc-overlay" + (showRightPanel && window.innerWidth < 768 ? " show" : "")}
+          onClick={() => setShowRightPanel(false)}
+        />
+
         {/* ═══ LEFT SIDEBAR ═══ */}
         {showSidebar && (
-          <aside style={S.sidebar}>
+          <aside className={"tjc-sidebar-mobile" + (showSidebar ? " show" : "")} style={S.sidebar}>
             <div style={S.sidebarBrand}>
               <div style={S.brandMark}>TJ</div>
               <div>
@@ -568,7 +578,7 @@ export default function ChatRoom() {
                 return (
                   <div key={room.id} className="tjc-room"
                     style={{ ...S.roomItem, ...(isActive ? S.roomItemActive : {}) }}
-                    onClick={() => { setActiveRoom(room); setUnreadCounts(prev => ({ ...prev, [room.id]: 0 })) }}>
+                    onClick={() => { setActiveRoom(room); setUnreadCounts(prev => ({ ...prev, [room.id]: 0 })); if (window.innerWidth < 768) setShowSidebar(false) }}>
                     <div style={{ ...S.roomAv, background: isActive ? C.gold : avatarBg(room.name), color: '#fff' }}>
                       {room.name?.[0]?.toUpperCase()}
                     </div>
@@ -606,8 +616,8 @@ export default function ChatRoom() {
                 {activeRoom.name?.[0]?.toUpperCase()}
               </div>
               <div>
-                <div style={S.headerRoomName}>{getRoomDisplayName(activeRoom)}</div>
-                <div style={S.headerRoomMeta}>
+                <div className="tjc-header-room-name" style={S.headerRoomName}>{getRoomDisplayName(activeRoom)}</div>
+                <div className="tjc-header-room-meta" style={S.headerRoomMeta}>
                   <span style={{ ...S.dot, background: statusColor(activeRoom.status) }} />
                   {statusLabel(activeRoom.status)}
                   {(isAdmin || isProvider) && (
@@ -654,14 +664,14 @@ export default function ChatRoom() {
           {error && <div style={S.errorBar}>{error}</div>}
 
           {negotiationMode && (isAdmin || isProvider) && (
-            <div style={S.negotiationBanner}>
+            <div className="tjc-neg-banner" style={S.negotiationBanner}>
               <span style={S.negotiationIcon}>🛡️</span>
               Negotiation mode is ON — client messages go to admin only
             </div>
           )}
 
           {/* Messages */}
-          <div style={S.messages}>
+          <div className="tjc-messages-area" style={S.messages}>
             {messages.length === 0 && connected && (
               <div style={S.emptyChat}>
                 <div style={S.emptyIcon}>💬</div>
@@ -847,7 +857,7 @@ export default function ChatRoom() {
           )}
 
           {/* Input */}
-          <div style={S.inputArea}>
+          <div className="tjc-input-area" style={S.inputArea}>
             {isRecording ? (
               <div style={S.recordingBox}>
                 <span style={S.recordingDot} />
@@ -886,7 +896,7 @@ export default function ChatRoom() {
               </div>
             )}
             {(isAdmin || isProvider) && activeRoom.status !== 'closed' && (
-              <div style={S.targetRow}>
+              <div className="tjc-target-row" style={S.targetRow}>
                 <span style={S.targetLbl}>Send to:</span>
                 {targetOptions.map(opt => (
                   <button key={opt.value} className="tjc-target"
@@ -919,7 +929,7 @@ export default function ChatRoom() {
 
         {/* ═══ RIGHT PANEL ═══ */}
         {showRightPanel && (
-          <aside style={S.rightPanel}>
+          <aside className={"tjc-rightpanel-mobile" + (showRightPanel ? " show" : "")} style={S.rightPanel}>
             <div style={S.tabs}>
               {['members', 'roominfo'].map(t => (
                 <button key={t} className="tjc-tab"
@@ -1124,6 +1134,22 @@ const css = `
   .tjc-action:hover  { background: #f5f8fd !important; }
   .tjc-signout:hover { color: #e53e3e !important; border-color: #feb2b2 !important; background: #fff5f5 !important; }
   .tjc-tab:hover { color: #075e54 !important; }
+  .tjc-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 98; }
+  .tjc-overlay.show { display: block; }
+  .tjc-sidebar-mobile { transition: transform 0.25s ease; }
+  .tjc-rightpanel-mobile { transition: transform 0.25s ease; }
+  @media (max-width: 767px) {
+    .tjc-sidebar-mobile { position: fixed !important; left: 0; top: 0; bottom: 0; z-index: 99; width: 280px !important; transform: translateX(-100%); }
+    .tjc-sidebar-mobile.show { transform: translateX(0) !important; }
+    .tjc-rightpanel-mobile { position: fixed !important; right: 0; top: 0; bottom: 0; z-index: 99; width: 280px !important; transform: translateX(100%); }
+    .tjc-rightpanel-mobile.show { transform: translateX(0) !important; }
+    .tjc-header-room-name { font-size: 13px !important; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tjc-header-room-meta { display: none !important; }
+    .tjc-target-row { overflow-x: auto; flex-wrap: nowrap !important; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+    .tjc-messages-area { padding: 10px 12px !important; }
+    .tjc-input-area { padding: 8px 10px 10px !important; }
+    .tjc-neg-banner { margin: 6px 10px 0 !important; padding: 8px 12px !important; font-size: 12px !important; }
+  }
 `
 
 const S = {
@@ -1246,5 +1272,3 @@ const S = {
   pendCard:     { background: '#fef6e0', border: '1px solid #f0dca0', borderRadius: 9, padding: '9px 11px', marginBottom: 7 },
   closeRoomBtn: { width: '100%', padding: '8px', border: '1px solid #feb2b2', borderRadius: 20, background: '#fff5f5', color: '#e53e3e', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'inherit' },
 }
-
-
