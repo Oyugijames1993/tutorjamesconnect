@@ -55,8 +55,8 @@ export default function Login() {
             <div style={S.divider}><span style={S.dividerText}>New here?</span></div>
 
             <div style={S.linksRow}>
-              <Link to="/register/client" style={S.secondaryBtn}>👤 I'm a Client</Link>
-              <Link to="/register/provider" style={S.secondaryBtn}>🎓 I'm a Provider</Link>
+              <Link to="/register/client" style={S.secondaryBtn}>👤 I'm a Student</Link>
+              <Link to="/register/provider" style={S.secondaryBtn}>🎓 I'm a Professor</Link>
             </div>
 
             <button style={S.adminToggle} onClick={() => setShowAdmin(true)}>
