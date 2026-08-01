@@ -1,8 +1,15 @@
 // src/services/api.js
 import axios from 'axios'
 
+// ── Auto-detect base URL ───────────────────────────────────────────────────
+// Production (HTTPS) → same domain e.g. https://tutorjamesconnect.onrender.com/api
+// Development (HTTP) → http://localhost:8000/api
+const BASE_URL = window.location.protocol === 'https:'
+  ? `${window.location.origin}/api`
+  : 'http://localhost:8000/api'
+
 const api = axios.create({
-  baseURL: 'http://localhost:8000/api',
+  baseURL: BASE_URL,
 })
 
 // Attach token to every request automatically
@@ -21,7 +28,7 @@ api.interceptors.response.use(
       if (refresh) {
         try {
           const res = await axios.post(
-            'http://localhost:8000/api/accounts/token/refresh/',
+            `${BASE_URL}/accounts/token/refresh/`,
             { refresh }
           )
           localStorage.setItem('access_token', res.data.access)
