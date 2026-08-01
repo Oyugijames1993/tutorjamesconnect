@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -187,3 +188,41 @@ rAoY1KQx+Ok1MuQaXP/rh0EFhl6/iVeNDz81uw9BXY5xWKM13Ax8cQ8h
 """
 VAPID_PUBLIC_KEY = "BA2O-bNznxYrOhqRPv1gfYbrnonWFc2sChjUpDH46TUy5Bpc_-uHQQWGXr-JV40PPzW7D0FdjnFYozXcDHxxDyE"
 VAPID_ADMIN_EMAIL = "mailto:oyugiochieng1@gmail.com"
+
+
+
+# ── Production settings ───────────────────────────────────────────────────────
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost').split(',')
+
+# ── Database — PostgreSQL on Render, SQLite locally ───────────────────────────
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if DATABASE_URL:
+    import dj_database_url
+    DATABASES = {
+        'default': dj_database_url.config(default=DATABASE_URL, conn_max_age=600)
+    }
+
+# ── Static files — WhiteNoise serves them ─────────────────────────────────────
+MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseSilencer')
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# ── CORS — allow frontend domain ──────────────────────────────────────────────
+CORS_ALLOWED_ORIGINS = os.environ.get(
+    'CORS_ALLOWED_ORIGINS', 'http://localhost:5173'
+).split(',')
+CORS_ALLOW_ALL_ORIGINS = False
+
+# ── Secret key from environment ───────────────────────────────────────────────
+SECRET_KEY = os.environ.get('SECRET_KEY', SECRET_KEY)
+
+# ── Redis for channels ────────────────────────────────────────────────────────
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379')
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {'hosts': [REDIS_URL]},
+    }
+}

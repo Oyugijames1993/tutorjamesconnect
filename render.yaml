@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: tutorjamesconnect
+    runtime: python
+    buildCommand: "./build.sh"
+    startCommand: "daphne -b 0.0.0.0 -p $PORT config.asgi:application"
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_HOSTS
+        value: "tutorjamesconnect.onrender.com"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tutorjamesconnect-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: tutorjamesconnect-redis
+          type: redis
+          property: connectionString
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://tutorjamesconnect.onrender.com"
+      - key: PYTHON_VERSION
+        value: "3.11.4"
+
+  - type: redis
+    name: tutorjamesconnect-redis
+    plan: free
+
+databases:
+  - name: tutorjamesconnect-db
+    plan: free
