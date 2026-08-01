@@ -205,7 +205,7 @@ if DATABASE_URL:
     }
 
 # ── Static files — WhiteNoise serves them ─────────────────────────────────────
-MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseSilencer')
+MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
