@@ -215,6 +215,18 @@ CORS_ALLOWED_ORIGINS = os.environ.get(
 ).split(',')
 CORS_ALLOW_ALL_ORIGINS = False
 
+# ── CSRF trusted origins — required for POST requests on production ────────────
+CSRF_TRUSTED_ORIGINS = [
+    'https://tutorjamesconnect.onrender.com',
+    'http://localhost:5173',
+    'http://localhost:8000',
+]
+
+# ── Access link base URL — used when sending WhatsApp login links ──────────────
+FRONTEND_URL = os.environ.get(
+    'FRONTEND_URL', 'https://tutorjamesconnect.onrender.com'
+)
+
 # ── Secret key from environment ───────────────────────────────────────────────
 SECRET_KEY = os.environ.get('SECRET_KEY', SECRET_KEY)
 

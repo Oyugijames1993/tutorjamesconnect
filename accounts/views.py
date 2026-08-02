@@ -189,7 +189,7 @@ class PendingAccessRequestsView(APIView):
             used_at__isnull=True
         ).select_related('user').order_by('-created_at')
 
-        frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        frontend_base = getattr(settings, 'FRONTEND_URL', 'https://tutorjamesconnect.onrender.com')
         data = [
             {
                 'id':           t.id,
