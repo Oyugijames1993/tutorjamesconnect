@@ -484,7 +484,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         from django.conf import settings
         try:
             f = SharedFile.objects.get(pk=file_id)
-            return 'http://localhost:8000' + settings.MEDIA_URL + f.file.name
+            frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:8000')
+            return frontend_base + settings.MEDIA_URL + f.file.name
         except SharedFile.DoesNotExist:
             return None
 
