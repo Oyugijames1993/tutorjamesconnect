@@ -246,16 +246,20 @@ AWS_STORAGE_BUCKET_NAME  = os.environ.get('AWS_STORAGE_BUCKET_NAME', 'tutorjames
 AWS_S3_REGION_NAME       = os.environ.get('AWS_S3_REGION_NAME', 'eu-west-1')
 AWS_S3_CUSTOM_DOMAIN     = f'{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com'
 AWS_DEFAULT_ACL          = 'public-read'
-AWS_S3_OBJECT_PARAMETERS = {
-    'CacheControl': 'max-age=86400',
-    'ACL': 'public-read',
-}
+AWS_S3_OBJECT_PARAMETERS = {'CacheControl': 'max-age=86400'}
 AWS_QUERYSTRING_AUTH     = False
 AWS_S3_FILE_OVERWRITE    = False
 AWS_S3_SIGNATURE_VERSION = 's3v4'
 
-
 if AWS_ACCESS_KEY_ID:
-    DEFAULT_FILE_STORAGE = 'config.storage_backends.PublicMediaStorage'
+    # Django 4.2+ uses STORAGES dict
+    STORAGES = {
+        'default': {
+            'BACKEND': 'config.storage_backends.PublicMediaStorage',
+        },
+        'staticfiles': {
+            'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
+        },
+    }
     MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/'
 
