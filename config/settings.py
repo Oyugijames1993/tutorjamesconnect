@@ -206,7 +206,6 @@ if DATABASE_URL:
 
 # ── Static files — WhiteNoise serves them ─────────────────────────────────────
 MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 # ── CORS — allow frontend domain ──────────────────────────────────────────────
@@ -252,13 +251,12 @@ AWS_S3_FILE_OVERWRITE    = False
 AWS_S3_SIGNATURE_VERSION = 's3v4'
 
 if AWS_ACCESS_KEY_ID:
-    # Django 4.2+ uses STORAGES dict
     STORAGES = {
         'default': {
             'BACKEND': 'config.storage_backends.PublicMediaStorage',
         },
         'staticfiles': {
-            'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
+            'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
         },
     }
     MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/'
