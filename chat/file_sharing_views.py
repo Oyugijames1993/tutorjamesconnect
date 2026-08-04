@@ -96,7 +96,7 @@ class UploadFileView(APIView):
 
         if needs_approval:
             # Admin-only URL — safe, this group only ever has admin sockets in it.
-            admin_preview_url = request.build_absolute_uri(shared.file.url)
+            admin_preview_url = shared.file.url
 
             # Global admin notification (badge/pending list, regardless of which room they're viewing)
             _push_to_group('admin_pending', {
@@ -144,7 +144,7 @@ class UploadFileView(APIView):
             'id':        shared.id,
             'file_name': shared.file_name,
             'file_size': _format_size(shared.file_size),
-            'file_url':  request.build_absolute_uri(shared.file.url),
+            'file_url':  shared.file.url,
             'sender':    user.display_name,
             'role':      user.role,
             'time':      shared.uploaded_at.strftime('%H:%M'),
@@ -176,7 +176,7 @@ class ApproveFileView(APIView):
         shared.save()
 
         try:
-            file_url = request.build_absolute_uri(shared.file.url)
+            file_url = shared.file.url
         except Exception:
             file_url = ''
 
