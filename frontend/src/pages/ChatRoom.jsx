@@ -91,6 +91,14 @@ export default function ChatRoom() {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
+  // Clear app badge when user opens the app
+  useEffect(() => {
+    if (navigator.clearAppBadge) navigator.clearAppBadge()
+    if (navigator.serviceWorker?.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: 'clear-badge' })
+    }
+  }, [])
+
   useEffect(() => {
     api.get('/chat/rooms/').then(res => {
       setRooms(res.data)
@@ -151,6 +159,11 @@ export default function ChatRoom() {
         if (data.id) seenIdsRef.current.add(data.id)
         setMessages(prev => [...prev, data])
         if (soundEnabled && data.sender !== user?.display_name) playSound('message', messageSoundProfile)
+        if (data.sender !== user?.display_name) {
+          if (navigator.serviceWorker?.controller) {
+            navigator.serviceWorker.controller.postMessage({ type: 'new-message' })
+          }
+        }
         return
       }
       if (data.type === 'file') {
@@ -158,6 +171,11 @@ export default function ChatRoom() {
         seenIdsRef.current.add(data.id)
         setMessages(prev => { const idx = prev.findIndex(m => m.type === 'file' && m.file_id === data.file_id); if (idx !== -1) { const updated = [...prev]; updated[idx] = { ...updated[idx], ...data }; return updated }; return [...prev, data] })
         if (soundEnabled && data.sender !== user?.display_name) playSound('message', messageSoundProfile)
+        if (data.sender !== user?.display_name) {
+          if (navigator.serviceWorker?.controller) {
+            navigator.serviceWorker.controller.postMessage({ type: 'new-message' })
+          }
+        }
         return
       }
       if (data.type === 'file:rejected') { setMessages(prev => prev.map(m => (m.type === 'file' && m.file_id === data.id) ? { ...m, status: 'rejected' } : m)); setPendingFiles(prev => prev.filter(f => f.id !== data.id)); return }
