@@ -91,6 +91,13 @@ export default function ChatRoom() {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
+  useEffect(() => {
+    if (navigator.clearAppBadge) navigator.clearAppBadge()
+    if (navigator.serviceWorker?.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: 'clear-badge' })
+    }
+  }, [])
+
   // Clear app badge when user opens the app
   useEffect(() => {
     if (navigator.clearAppBadge) navigator.clearAppBadge()
