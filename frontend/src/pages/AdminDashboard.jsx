@@ -22,6 +22,7 @@ export default function AdminDashboard() {
 
   const [newRoom, setNewRoom]         = useState({ name: '', client_id: '' })
   const [roomMsg, setRoomMsg]         = useState('')
+  const [referrals, setReferrals] = useState([])
 
   useEffect(() => {
     if (user?.role !== 'admin') {
@@ -43,6 +44,7 @@ export default function AdminDashboard() {
         api.get('/chat/admin/pending/'),
         api.get('/chat/admin/files/'),
         api.get('/accounts/admin/access-requests/'),
+        api.get('/accounts/referrals/'),
       ])
       setOverview(ov.data)
       setClients(users.data.filter(u => u.role === 'client'))
@@ -113,6 +115,7 @@ export default function AdminDashboard() {
     { id: 'providers', label: '🎓 Providers' },
     { id: 'rooms',     label: '💬 Chat Rooms' },
     { id: 'pending',   label: `⏳ Pending ${totalPending > 0 ? '(' + totalPending + ')' : ''}` },
+    { id: 'referrals', label: '🎁 Referrals' },
     { id: 'access',    label: `🔐 Access Requests ${accessRequests.length > 0 ? '(' + accessRequests.length + ')' : ''}` },
   ]
 
@@ -521,6 +524,73 @@ export default function AdminDashboard() {
                   )}
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+        {/* ── REFERRALS TAB ── */}
+        {activeTab === 'referrals' && (
+          <div className="content-area" style={S.content}>
+            <div style={S.section}>
+              <div style={S.sectionTitle}>🎁 Referrals ({referrals.length})</div>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 16 }}>
+                Check the box once you have given the 5% discount to the referrer.
+              </div>
+              {referrals.length === 0 ? (
+                <div style={S.emptyState}>No referrals yet</div>
+              ) : (
+                <div className="table-wrap">
+                  <table style={S.table}>
+                    <thead>
+                      <tr>
+                        {['Referrer', 'Referred Student', 'Date Joined', 'Discount Given'].map(h => (
+                          <th key={h} style={S.th}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {referrals.map((r, i) => (
+                        <tr key={r.id} style={{ background: i % 2 === 0 ? '#fff' : '#f9f9f9' }}>
+                          <td style={S.td}>
+                            <span style={S.clientId}>{r.referrer}</span>
+                            <div style={{ fontSize: 11, color: '#888' }}>{r.referrer_client_id}</div>
+                          </td>
+                          <td style={S.td}>
+                            <span style={{ fontWeight: 600, color: '#1a1a1a' }}>{r.referred}</span>
+                            <div style={{ fontSize: 11, color: '#888' }}>{r.referred_client_id}</div>
+                          </td>
+                          <td style={S.td}>
+                            {new Date(r.created_at).toLocaleDateString()}
+                          </td>
+                          <td style={S.td}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <input
+                                type="checkbox"
+                                checked={r.discount_given}
+                                style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#00a884' }}
+                                onChange={async () => {
+                                  try {
+                                    const res = await api.post(`/accounts/referrals/${r.id}/toggle/`)
+                                    setReferrals(prev => prev.map(x =>
+                                      x.id === r.id ? { ...x, discount_given: res.data.discount_given } : x
+                                    ))
+                                  } catch { setError('Failed to update discount status.') }
+                                }}
+                              />
+                              {r.discount_given ? (
+                                <span style={{ fontSize: 12, color: '#00a884', fontWeight: 600 }}>
+                                  ✅ Given {r.discount_given_at ? `on ${new Date(r.discount_given_at).toLocaleDateString()}` : ''}
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: 12, color: '#888' }}>Not given yet</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}

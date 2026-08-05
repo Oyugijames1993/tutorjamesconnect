@@ -49,11 +49,13 @@ export default function ChatRoom() {
   const [onlineUserIds, setOnlineUserIds]           = useState(new Set())
   const [messageTarget, setMessageTarget]           = useState('everyone')
   const [searchQuery, setSearchQuery]               = useState('')
+  const [referralLink, setReferralLink]             = useState('')
 
   const [soundEnabled, setSoundEnabled] = useState(() => {
     const stored = localStorage.getItem('tjc_sound_enabled')
     return stored === null ? true : stored === 'true'
   })
+  const [referralLink, setReferralLink] = useState('')
   const [messageSoundProfile, setMessageSoundProfile] = useState(() =>
     localStorage.getItem('tjc_message_sound_profile') || 'chime')
   const [pendingSoundProfile, setPendingSoundProfile] = useState(() =>
@@ -98,12 +100,26 @@ export default function ChatRoom() {
     }
   }, [])
 
+  useEffect(() => {
+    if (user?.role !== 'client') return
+    api.get('/accounts/my-referral/').then(res => {
+      setReferralLink(res.data.referral_link)
+    }).catch(() => {})
+  }, [])
+
   // Clear app badge when user opens the app
   useEffect(() => {
     if (navigator.clearAppBadge) navigator.clearAppBadge()
     if (navigator.serviceWorker?.controller) {
       navigator.serviceWorker.controller.postMessage({ type: 'clear-badge' })
     }
+  }, [])
+
+  useEffect(() => {
+    if (user?.role !== 'client') return
+    api.get('/accounts/my-referral/').then(res => {
+      setReferralLink(res.data.referral_link)
+    }).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -396,6 +412,26 @@ export default function ChatRoom() {
               })}
             </div>
             <div style={{ flex: 1 }} />
+            {user?.role === 'client' && referralLink && (
+              <div style={S.referralBox}>
+                <div style={S.referralTitle}>🎁 Refer and Earn 5% Off</div>
+                <div style={S.referralLink}>{referralLink}</div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                  <button style={S.referralBtn} onClick={() => {
+                    navigator.clipboard.writeText(referralLink)
+                    alert('Link copied!')
+                  }}>📋 Copy</button>
+                  <button style={S.referralBtn} onClick={() => {
+                    const text = 'Join TutorJamesConnect and get your academic projects done! ' + referralLink
+                    if (navigator.share) {
+                      navigator.share({ title: 'TutorJamesConnect', text, url: referralLink })
+                    } else {
+                      window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank')
+                    }
+                  }}>📲 Share</button>
+                </div>
+              </div>
+            )}
             <button className="tjc-signout" style={S.signOutBtn} onClick={logout}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
               Sign out
@@ -906,4 +942,8 @@ const S = {
   soundOpt:       { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', borderRadius: 7, marginBottom: 3, cursor: 'pointer', border: '1.5px solid transparent', transition: 'all 0.15s' },
   prevBtn:        { background: 'none', border: '1px solid #00a884', borderRadius: 5, padding: '2px 7px', fontSize: 10, cursor: 'pointer', color: '#00a884', flexShrink: 0, fontFamily: 'inherit' },
   pendCard:       { background: '#fef6e0', border: '1px solid #f0dca0', borderRadius: 9, padding: '9px 11px', marginBottom: 7 },
+  referralBox:    { margin: '8px 10px', padding: '10px 12px', background: '#e7f8f3', border: '1px solid #b6e6d8', borderRadius: 10 },
+  referralTitle:  { fontSize: 12, fontWeight: 700, color: '#075e54', marginBottom: 6 },
+  referralLink:   { fontSize: 10, color: '#3b4a54', wordBreak: 'break-all', background: '#fff', padding: '5px 8px', borderRadius: 6, border: '1px solid #b6e6d8' },
+  referralBtn:    { flex: 1, padding: '6px', border: '1px solid #00a884', borderRadius: 6, background: 'none', color: '#00a884', fontSize: 11, fontWeight: 600, cursor: 'pointer' },
 }
