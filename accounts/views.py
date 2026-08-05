@@ -8,7 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils import timezone
-from .models import CustomUser, OTP, RoomAccessToken, PushSubscription
+from .models import CustomUser, OTP, RoomAccessToken, PushSubscription, Referral
 from .serializers import (
     UserSerializer,
     ClientRegisterSerializer,
@@ -16,6 +16,7 @@ from .serializers import (
     ClientSignupSerializer,
     ProviderSignupSerializer,
 )
+
 
 
 def get_tokens_for_user(user):
@@ -107,6 +108,17 @@ class ClientSignupView(APIView):
             course = serializer.validated_data.get('course', ''),
         )
 
+        # ── Handle referral code ──────────────────────────────────────────────
+        ref_code = request.data.get('ref') or request.query_params.get('ref')
+        if ref_code:
+            try:
+                from .models import Referral
+                referrer = CustomUser.objects.get(client_id=ref_code, role='client')
+                if referrer != user:
+                    Referral.objects.get_or_create(referrer=referrer, referred=user)
+            except CustomUser.DoesNotExist:
+                pass
+
         tokens = get_tokens_for_user(user)
         return Response(
             {
@@ -118,7 +130,6 @@ class ClientSignupView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
-
 
 # ── Passwordless provider signup ──────────────────────────────────────────
 # No auto-created room — providers get manually added to whichever rooms
@@ -363,3 +374,88 @@ class LogoutView(APIView):
                 {'error': 'Invalid token.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+# ── Referral system ───────────────────────────────────────────────────────────
+
+class ReferralListView(APIView):
+    """Admin only — list all referrals with discount status."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'admin':
+            return Response({'error': 'Admin only.'}, status=403)
+
+
+        referrals = Referral.objects.select_related(
+            'referrer', 'referred', 'discount_given_by'
+        ).all()
+
+        data = [
+            {
+                'id':                r.id,
+                'referrer':          r.referrer.display_name,
+                'referrer_id':       r.referrer.id,
+                'referrer_client_id':r.referrer.client_id,
+                'referred':          r.referred.display_name,
+                'referred_id':       r.referred.id,
+                'referred_client_id':r.referred.client_id,
+                'created_at':        r.created_at,
+                'discount_given':    r.discount_given,
+                'discount_given_at': r.discount_given_at,
+                'discount_given_by': r.discount_given_by.display_name if r.discount_given_by else None,
+            }
+            for r in referrals
+        ]
+        return Response(data)
+
+
+class MarkDiscountGivenView(APIView):
+    """Admin only — toggle discount given for a referral."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, referral_id):
+        if request.user.role != 'admin':
+            return Response({'error': 'Admin only.'}, status=403)
+
+        from .models import Referral
+        from django.utils import timezone
+
+        referral = get_object_or_404(Referral, pk=referral_id)
+        referral.discount_given    = not referral.discount_given
+        referral.discount_given_at = timezone.now() if referral.discount_given else None
+        referral.discount_given_by = request.user if referral.discount_given else None
+        referral.save()
+
+        return Response({
+            'id':             referral.id,
+            'discount_given': referral.discount_given,
+        })
+
+
+class MyReferralLinkView(APIView):
+    """Client — get their own referral link and stats."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .models import Referral
+        from django.conf import settings
+
+        user     = request.user
+        base_url = getattr(settings, 'FRONTEND_URL', 'https://tutorjamesconnect.onrender.com')
+
+        referrals = Referral.objects.filter(referrer=user).select_related('referred')
+        data = [
+            {
+                'referred':       r.referred.display_name,
+                'joined':         r.created_at,
+                'discount_given': r.discount_given,
+            }
+            for r in referrals
+        ]
+
+        return Response({
+            'referral_link':      f'{base_url}/ref/{user.client_id}',
+            'total_referrals':    referrals.count(),
+            'discounts_earned':   referrals.filter(discount_given=True).count(),
+            'referrals':          data,
+        })

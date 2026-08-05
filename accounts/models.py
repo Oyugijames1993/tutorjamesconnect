@@ -124,3 +124,33 @@ class PushSubscription(models.Model):
 
     def __str__(self):
         return f"{self.user.display_name} push subscription ({self.endpoint[:40]}…)"
+class Referral(models.Model):
+    referrer          = models.ForeignKey(
+        CustomUser,
+        on_delete    = models.CASCADE,
+        related_name = 'referrals_made',
+    )
+    referred          = models.ForeignKey(
+        CustomUser,
+        on_delete    = models.CASCADE,
+        related_name = 'referral_source',
+    )
+    created_at        = models.DateTimeField(auto_now_add=True)
+    discount_given    = models.BooleanField(default=False)
+    discount_given_at = models.DateTimeField(null=True, blank=True)
+    discount_given_by = models.ForeignKey(
+        CustomUser,
+        on_delete    = models.SET_NULL,
+        null         = True,
+        blank        = True,
+        related_name = 'discounts_given',
+    )
+
+    class Meta:
+        unique_together = ('referrer', 'referred')
+        ordering        = ['-created_at']
+
+    def __str__(self):
+        return f'{self.referrer.display_name} → {self.referred.display_name}'
+
+

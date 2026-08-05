@@ -247,7 +247,13 @@ export default function RegisterClient() {
 
     setSubmitting(true)
     try {
-      const res = await api.post('/accounts/signup/client/', { ...form, phone_number: fullPhoneNumber })
+      const refCode = localStorage.getItem('ref_code') || ''
+      const res = await api.post('/accounts/signup/client/', {
+        ...form,
+        phone_number: fullPhoneNumber,
+        ...(refCode ? { ref: refCode } : {})
+      })
+      localStorage.removeItem('ref_code')
       const { user, access, refresh, room_id } = res.data
       login(user, access, refresh)
       navigate(`/chat/${room_id}`, { replace: true })

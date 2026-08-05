@@ -17,6 +17,9 @@ from .views import (
     VapidPublicKeyView,
     SubscribePushView,
     UnsubscribePushView,
+    ReferralListView,
+    MarkDiscountGivenView,
+    MyReferralLinkView,
 )
 
 urlpatterns = [
@@ -57,6 +60,9 @@ urlpatterns = [
     # Profile
     path('me/',    MeView.as_view(),       name='me'),
     path('users/', UserListView.as_view(), name='user-list'),
+    path('referrals/',                          ReferralListView.as_view(),     name='referral-list'),
+    path('referrals/<int:referral_id>/toggle/', MarkDiscountGivenView.as_view(), name='mark-discount'),
+    path('my-referral/',                        MyReferralLinkView.as_view(),   name='my-referral'),
 ]
 
 

@@ -9,6 +9,7 @@ import Login from './pages/Login'
 import ChatRoom from './pages/ChatRoom'
 import AdminDashboard from './pages/AdminDashboard'
 import { useAuth } from './context/AuthContext'
+import RedeemRef from './pages/RedeemRef'
 
 function App() {
   const { user } = useAuth()
@@ -28,6 +29,7 @@ function App() {
       <Route path="/register/client" element={<RegisterClient />} />
       <Route path="/register/provider" element={<RegisterProvider />} />
       <Route path="/lost-access" element={<LostAccess />} />
+      <Route path="/ref/:refCode" element={<RedeemRef />} />
       <Route path="/access/:token" element={<RedeemAccess />} />
       <Route
         path="/dashboard"
