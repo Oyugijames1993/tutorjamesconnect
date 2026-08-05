@@ -55,7 +55,6 @@ export default function ChatRoom() {
     const stored = localStorage.getItem('tjc_sound_enabled')
     return stored === null ? true : stored === 'true'
   })
-  const [referralLink, setReferralLink] = useState('')
   const [messageSoundProfile, setMessageSoundProfile] = useState(() =>
     localStorage.getItem('tjc_message_sound_profile') || 'chime')
   const [pendingSoundProfile, setPendingSoundProfile] = useState(() =>
