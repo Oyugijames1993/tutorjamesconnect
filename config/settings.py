@@ -180,7 +180,11 @@ EMAIL_HOST_PASSWORD = 'your-app-password'
 DEFAULT_FROM_EMAIL  = 'TutorJamesConnect <your@gmail.com>'
 
 
-VAPID_PRIVATE_KEY_PEM = os.environ.get('VAPID_PRIVATE_KEY_PEM', '').replace('\\n', '\n')
+VAPID_PRIVATE_KEY_PEM = os.environ.get('VAPID_PRIVATE_KEY_PEM', """-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgVvzPNKI981fg7bp9
+svcXdx8eO4w4eztRLc6eVboZoeKhRANCAAShbGNJyduvEA+eeyl6UWeJuODjbQfG
+yIF//3n/tH67VjPR/xpzwfbTGL1YP1XHkudTiAkVNO3OymuK8m/F4Nh5
+-----END PRIVATE KEY-----""").replace('\\n', '\n')
 VAPID_PUBLIC_KEY = "BKFsY0nJ268QD557KXpRZ4m44ONtB8bIgX__ef-0frtWM9H_GnPB9tMYvVg_VceS51OICRU07c7Ka4ryb8Xg2Hk"
 VAPID_ADMIN_EMAIL = "mailto:oyugiochieng1@gmail.com"
 
