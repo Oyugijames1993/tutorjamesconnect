@@ -20,8 +20,8 @@ def send_push_to_user(user, title, body, sound_type='message', url=None):
         'url':        url or '/',
     })
 
-    # pywebpush 2.x expects the raw PEM string directly
-    private_key = settings.VAPID_PRIVATE_KEY_PEM.strip()
+    # Use base64 encoded key for pywebpush 2.x
+    private_key = getattr(settings, 'VAPID_PRIVATE_KEY', settings.VAPID_PRIVATE_KEY_PEM).strip()
 
     for sub in subs:
         try:
@@ -35,10 +35,7 @@ def send_push_to_user(user, title, body, sound_type='message', url=None):
                 },
                 data=payload,
                 vapid_private_key=private_key,
-                vapid_claims={
-                    'sub': settings.VAPID_ADMIN_EMAIL,
-                    'aud': sub.endpoint.split('/')[0] + '//' + sub.endpoint.split('/')[2],
-                },
+                vapid_claims={'sub': settings.VAPID_ADMIN_EMAIL},
             )
             logger.info('Push sent to %s', user.display_name)
         except WebPushException as e:
@@ -48,8 +45,6 @@ def send_push_to_user(user, title, body, sound_type='message', url=None):
                 logger.info('Deleted expired subscription for %s', user.display_name)
             else:
                 logger.warning('Push failed for %s: %s', user.display_name, e)
-                if hasattr(e, 'response') and e.response:
-                    logger.warning('Response: %s', e.response.text)
         except Exception as e:
             logger.warning('Unexpected push error for %s: %s', user.display_name, e)
 
