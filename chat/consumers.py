@@ -494,7 +494,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             msgs = list(
                 room.messages.filter(status__in=['sent', 'approved', 'pending'])
                 .select_related('sender', 'reply_to__sender')
-                .order_by('timestamp')[:50]
+                .order_by('timestamp')[:200]
             )
 
         elif role == 'provider':
@@ -508,7 +508,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     Q(sender=self.user)  # all own messages regardless of target/status
                 )
                 .select_related('sender', 'reply_to__sender')
-                .order_by('timestamp')[:50]
+                .order_by('timestamp')[:200]
             )
             # Deduplicate
             seen = set(); unique = []
@@ -525,7 +525,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     Q(sender=self.user)  # always see own messages, regardless of target/status
                 )
                 .select_related('sender', 'reply_to__sender')
-                .order_by('timestamp')[:50]
+                .order_by('timestamp')[:200]
             )
             # Deduplicate
             seen = set(); unique = []

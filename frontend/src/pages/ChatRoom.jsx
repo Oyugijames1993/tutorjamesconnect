@@ -170,7 +170,7 @@ export default function ChatRoom() {
   useEffect(() => {
     if (!activeRoom) return
     if (wsRef.current) wsRef.current.disconnect()
-    setConnected(false); seenIdsRef.current = new Set(); setOnlineUserIds(new Set())
+    setMessages([]); setConnected(false); seenIdsRef.current = new Set(); setOnlineUserIds(new Set())
     const token = localStorage.getItem('access_token')
     wsRef.current = new ChatWebSocket(activeRoom.id, token, data => {
       if (data.type === 'connected') { setConnected(true); return }
