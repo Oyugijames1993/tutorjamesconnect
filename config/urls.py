@@ -6,16 +6,21 @@ from django.views.generic import TemplateView
 from django.http import HttpResponse
 import os
 
-def empty_sw(request):
-    """Return empty service worker to prevent MIME type error."""
-    return HttpResponse('// no-op service worker', content_type='application/javascript')
+def serve_sw(request):
+    """Serve the real service worker from the frontend build."""
+    import os
+    sw_path = os.path.join(settings.BASE_DIR, 'staticfiles', 'frontend', 'sw.js')
+    if os.path.exists(sw_path):
+        with open(sw_path) as f:
+            return HttpResponse(f.read(), content_type='application/javascript')
+    return HttpResponse('// service worker not found', content_type='application/javascript')
 
 urlpatterns = [
     path('admin/',         admin.site.urls),
     path('api/accounts/',  include('accounts.urls')),
     path('api/chat/',      include('chat.urls')),
     path('api/dashboard/', include('dashboard.urls')),
-    path('sw.js',          empty_sw),
+    path('sw.js',          serve_sw),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 # ── Serve React frontend for all non-API routes ───────────────────────────────
