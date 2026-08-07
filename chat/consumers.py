@@ -64,14 +64,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 {'type': 'presence_update', 'user_id': self.user.id, 'online': True}
             )
 
-        await self.channel_layer.group_send(
-            self.room_group,
-            {
-                'type':           'system_message',
-                'message':        f'{self.user.display_name} has joined the room.',
-                'sender_channel': self.channel_name,
-            }
-        )
+        # No join announcement — WebSocket reconnects should be invisible to users
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.room_group, self.channel_name)
