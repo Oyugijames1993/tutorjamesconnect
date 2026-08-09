@@ -459,3 +459,25 @@ class MyReferralLinkView(APIView):
             'discounts_earned':   referrals.filter(discount_given=True).count(),
             'referrals':          data,
         })
+
+class SubscribeExpoPushView(APIView):
+    """Save Expo push token for native app notifications."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from .models import PushSubscription
+        expo_token = request.data.get('expo_token')
+        platform   = request.data.get('platform', 'android')
+
+        if not expo_token:
+            return Response({'error': 'expo_token is required.'}, status=400)
+
+        PushSubscription.objects.update_or_create(
+            user     = request.user,
+            endpoint = expo_token,
+            defaults = {
+                'p256dh': 'expo',
+                'auth':   platform,
+            }
+        )
+        return Response({'detail': 'Expo push token saved.'})

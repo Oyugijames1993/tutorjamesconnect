@@ -1,53 +1,81 @@
 # accounts/push.py
 import json
 import logging
+import requests
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
 def send_push_to_user(user, title, body, sound_type='message', url=None):
-    from pywebpush import webpush, WebPushException
     from .models import PushSubscription
-
     subs = PushSubscription.objects.filter(user=user)
     if not subs.exists():
         return
 
+    for sub in subs:
+        # Expo push token (native app)
+        if sub.endpoint.startswith('ExponentPushToken'):
+            send_expo_push(sub.endpoint, title, body, url)
+        else:
+            # Web push (PWA)
+            send_web_push(sub, title, body, sound_type, url)
+
+def send_expo_push(token, title, body, url=None):
+    """Send push notification via Expo's push service."""
+    try:
+        response = requests.post(
+            'https://exp.host/--/api/v2/push/send',
+            headers={
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+            },
+            json={
+                'to':       token,
+                'title':    title,
+                'body':     body,
+                'sound':    'default',
+                'data':     { 'url': url or '/' },
+                'priority': 'high',
+            },
+            timeout=10,
+        )
+        result = response.json()
+        logger.info('Expo push sent: %s', result)
+    except Exception as e:
+        logger.warning('Expo push failed: %s', e)
+
+def send_web_push(sub, title, body, sound_type='message', url=None):
+    """Send web push notification via VAPID."""
+    from pywebpush import webpush, WebPushException
     payload = json.dumps({
         'title':      title,
         'body':       body,
         'sound_type': sound_type,
         'url':        url or '/',
     })
-
-    # Use base64 encoded key for pywebpush 2.x
     private_key = getattr(settings, 'VAPID_PRIVATE_KEY', settings.VAPID_PRIVATE_KEY_PEM).strip()
-
-    for sub in subs:
-        try:
-            webpush(
-                subscription_info={
-                    'endpoint': sub.endpoint,
-                    'keys': {
-                        'p256dh': sub.p256dh,
-                        'auth':   sub.auth,
-                    },
+    try:
+        webpush(
+            subscription_info={
+                'endpoint': sub.endpoint,
+                'keys': {
+                    'p256dh': sub.p256dh,
+                    'auth':   sub.auth,
                 },
-                data=payload,
-                vapid_private_key=private_key,
-                vapid_claims={'sub': settings.VAPID_ADMIN_EMAIL},
-            )
-            logger.info('Push sent to %s', user.display_name)
-        except WebPushException as e:
-            status_code = getattr(e.response, 'status_code', None)
-            if status_code in (404, 410):
-                sub.delete()
-                logger.info('Deleted expired subscription for %s', user.display_name)
-            else:
-                logger.warning('Push failed for %s: %s', user.display_name, e)
-        except Exception as e:
-            logger.warning('Unexpected push error for %s: %s', user.display_name, e)
-
+            },
+            data=payload,
+            vapid_private_key=private_key,
+            vapid_claims={'sub': settings.VAPID_ADMIN_EMAIL},
+        )
+        logger.info('Web push sent to %s', sub.user.display_name)
+    except WebPushException as e:
+        status_code = getattr(e.response, 'status_code', None)
+        if status_code in (404, 410):
+            sub.delete()
+        else:
+            logger.warning('Web push failed for %s: %s', sub.user.display_name, e)
+    except Exception as e:
+        logger.warning('Unexpected push error for %s: %s', sub.user.display_name, e)
 
 def send_push_to_users(users, title, body, sound_type='message', url=None):
     for user in users:

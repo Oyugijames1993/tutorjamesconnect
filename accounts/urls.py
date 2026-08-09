@@ -20,6 +20,7 @@ from .views import (
     ReferralListView,
     MarkDiscountGivenView,
     MyReferralLinkView,
+    SubscribeExpoPushView,
 )
 
 urlpatterns = [
@@ -63,6 +64,7 @@ urlpatterns = [
     path('referrals/',                          ReferralListView.as_view(),     name='referral-list'),
     path('referrals/<int:referral_id>/toggle/', MarkDiscountGivenView.as_view(), name='mark-discount'),
     path('my-referral/',                        MyReferralLinkView.as_view(),   name='my-referral'),
+    path('push/subscribe/expo/',                SubscribeExpoPushView.as_view(), name='expo-push-subscribe'),
 ]
 
 
