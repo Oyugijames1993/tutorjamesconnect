@@ -15,12 +15,35 @@ def serve_sw(request):
             return HttpResponse(f.read(), content_type='application/javascript')
     return HttpResponse('// service worker not found', content_type='application/javascript')
 
+
+def serve_assetlinks(request):
+    """Android App Links verification file — lets the TutorJamesConnect
+    mobile app register as a handler for https://<domain>/access/* links,
+    so tapping an access link on a phone with the app installed opens the
+    app directly instead of a browser."""
+    import json
+    from django.http import JsonResponse
+    data = [
+        {
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+                "namespace": "android_app",
+                "package_name": "com.tutorjamesconnect",
+                "sha256_cert_fingerprints": [
+                    "02:EE:B7:6D:9E:37:06:F9:D7:BB:A1:2C:55:59:B6:47:EB:0D:78:C2:61:65:13:56:20:B4:B9:E8:3C:B1:A4:D2"
+                ]
+            }
+        }
+    ]
+    return JsonResponse(data, safe=False)
+
 urlpatterns = [
     path('admin/',         admin.site.urls),
     path('api/accounts/',  include('accounts.urls')),
     path('api/chat/',      include('chat.urls')),
     path('api/dashboard/', include('dashboard.urls')),
     path('sw.js',          serve_sw),
+    path('.well-known/assetlinks.json', serve_assetlinks),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 # ── Serve React frontend for all non-API routes ───────────────────────────────
