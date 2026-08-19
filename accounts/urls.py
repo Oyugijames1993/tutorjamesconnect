@@ -1,6 +1,7 @@
 # accounts/urls.py
 from django.urls import path
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
+from .token_views import DeviceAwareTokenObtainPairView
 from .views import (
     ClientRegisterView,
     ProviderRegisterView,
@@ -46,7 +47,7 @@ urlpatterns = [
     path('redeem-access/',           RedeemAccessTokenView.as_view(),      name='redeem-access'),
 
     # Login
-    path('login/', TokenObtainPairView.as_view(), name='login'),
+    path('login/', DeviceAwareTokenObtainPairView.as_view(), name='login'),
 
     # OTP login — for new device or after logout
     path('send-otp/',   SendOTPView.as_view(),   name='send-otp'),

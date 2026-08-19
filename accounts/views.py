@@ -1,4 +1,5 @@
 # accounts/views.py
+import uuid
 from django.shortcuts import render
 from rest_framework import generics, status
 from rest_framework.response import Response
@@ -19,12 +20,32 @@ from .serializers import (
 
 
 
-def get_tokens_for_user(user):
+def get_tokens_for_user(user, platform=None):
     refresh = RefreshToken.for_user(user)
+    access = refresh.access_token
+
+    if platform == 'mobile':
+        # Only the mobile app tags its requests this way (see api.js). Each
+        # mobile login gets a fresh session id embedded in both tokens, and
+        # overwrites the user's active_device_token — so the previous
+        # phone's tokens stop matching and get rejected on their next
+        # request (see DeviceAwareJWTAuthentication). Web/browser logins
+        # never pass platform='mobile', so they're unaffected and don't
+        # count against the one-phone rule.
+        session_id = uuid.uuid4().hex
+        refresh['device_session_id'] = session_id
+        access['device_session_id']  = session_id
+        user.active_device_token = session_id
+        user.save(update_fields=['active_device_token'])
+
     return {
         'refresh': str(refresh),
-        'access':  str(refresh.access_token),
+        'access':  str(access),
     }
+
+
+def _client_platform(request):
+    return request.headers.get('X-Client-Platform')
 
 
 # ── Web Push: give the frontend the public key it needs to subscribe ────────
@@ -76,7 +97,7 @@ class ClientRegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user   = serializer.save()
-        tokens = get_tokens_for_user(user)
+        tokens = get_tokens_for_user(user, platform=_client_platform(request))
         return Response(
             {
                 'user':    UserSerializer(user).data,
@@ -119,7 +140,7 @@ class ClientSignupView(APIView):
             except CustomUser.DoesNotExist:
                 pass
 
-        tokens = get_tokens_for_user(user)
+        tokens = get_tokens_for_user(user, platform=_client_platform(request))
         return Response(
             {
                 'user':    UserSerializer(user).data,
@@ -143,7 +164,7 @@ class ProviderSignupView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
-        tokens = get_tokens_for_user(user)
+        tokens = get_tokens_for_user(user, platform=_client_platform(request))
         return Response(
             {
                 'user':    UserSerializer(user).data,
@@ -233,7 +254,7 @@ class RedeemAccessTokenView(APIView):
         token.used_at = timezone.now()
         token.save()
 
-        tokens = get_tokens_for_user(token.user)
+        tokens = get_tokens_for_user(token.user, platform=_client_platform(request))
 
         # Clients have exactly one permanent room — hand it straight to the
         # frontend so it can route there directly. Providers can be in
@@ -264,7 +285,7 @@ class ProviderRegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user   = serializer.save()
-        tokens = get_tokens_for_user(user)
+        tokens = get_tokens_for_user(user, platform=_client_platform(request))
         return Response(
             {
                 'user':    UserSerializer(user).data,
@@ -347,7 +368,7 @@ class VerifyOTPView(APIView):
         otp.is_used = True
         otp.save()
 
-        tokens = get_tokens_for_user(user)
+        tokens = get_tokens_for_user(user, platform=_client_platform(request))
         return Response({
             'user':    UserSerializer(user).data,
             'access':  tokens['access'],
