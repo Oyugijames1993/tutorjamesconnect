@@ -186,21 +186,17 @@ class RequestAccessView(APIView):
 
     def post(self, request):
         phone_number = request.data.get('phone_number', '').strip()
-        role         = request.data.get('role', 'client').strip()
 
         if not phone_number:
             return Response({'error': 'Phone number is required.'}, status=400)
-        if role not in ('client', 'provider'):
-            role = 'client'
 
-        # Phone numbers are only guaranteed unique among clients — a
-        # provider could share a number with a client (or, in principle,
-        # with another provider). Asking which role the requester is
-        # resolves that ambiguity instead of guessing. If more than one
-        # account still matches, a token is created for each; admin's
-        # pending-requests list shows each one by name so it's obvious
-        # which is which.
-        matches = CustomUser.objects.filter(phone_number=phone_number, role=role)
+        # No need to ask whether the requester is a client or provider —
+        # the phone number alone already identifies them. If it happens to
+        # match more than one account (e.g. the same number used for both
+        # a client and a provider profile), a token is created for each;
+        # admin's pending-requests list shows each one by name so it's
+        # obvious which is which.
+        matches = CustomUser.objects.filter(phone_number=phone_number, role__in=('client', 'provider'))
         for user in matches:
             RoomAccessToken.objects.create(user=user)
 
