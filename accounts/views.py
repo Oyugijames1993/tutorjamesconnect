@@ -197,11 +197,18 @@ class RequestAccessView(APIView):
         # admin's pending-requests list shows each one by name so it's
         # obvious which is which.
         matches = CustomUser.objects.filter(phone_number=phone_number, role__in=('client', 'provider'))
+
+        if not matches.exists():
+            return Response(
+                {'error': 'No account found with this phone number. Please check the number or sign up.'},
+                status=404,
+            )
+
         for user in matches:
             RoomAccessToken.objects.create(user=user)
 
         return Response({
-            'message': 'If this number is registered, an access request has been sent to the admin.'
+            'message': 'Access request sent to admin. You will receive a link on WhatsApp shortly.'
         })
 
 

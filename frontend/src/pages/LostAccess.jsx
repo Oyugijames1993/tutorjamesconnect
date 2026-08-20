@@ -213,7 +213,6 @@ const COUNTRY_CODES = [
 ]
 
 export default function LostAccess() {
-  const [role, setRole]               = useState('client')
   const [countryCode, setCountryCode] = useState('+965')
   const [localNumber, setLocalNumber] = useState('')
   const [submitting, setSubmitting]   = useState(false)
@@ -233,12 +232,10 @@ export default function LostAccess() {
 
     setSubmitting(true)
     try {
-      await api.post('/accounts/request-access/', { phone_number, role })
+      await api.post('/accounts/request-access/', { phone_number })
       setSubmitted(true)
-    } catch {
-      // Deliberately vague either way — matches the backend's choice not
-      // to reveal whether a number is registered.
-      setSubmitted(true)
+    } catch (err) {
+      setError(err.response?.data?.error || 'Something went wrong. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -267,27 +264,7 @@ export default function LostAccess() {
             </p>
 
             <form onSubmit={handleSubmit} style={S.form}>
-              <div style={{ marginBottom: 16 }}>
-                <label style={S.label}>I am a</label>
-                <div style={S.roleRow}>
-                  <button
-                    type="button"
-                    style={{ ...S.roleBtn, ...(role === 'client' ? S.roleBtnOn : {}) }}
-                    onClick={() => setRole('client')}
-                    disabled={submitting}
-                  >
-                    👤 Client
-                  </button>
-                  <button
-                    type="button"
-                    style={{ ...S.roleBtn, ...(role === 'provider' ? S.roleBtnOn : {}) }}
-                    onClick={() => setRole('provider')}
-                    disabled={submitting}
-                  >
-                    🎓 Provider
-                  </button>
-                </div>
-              </div>
+
 
               <div style={{ marginBottom: 16 }}>
                 <label style={S.label}>Phone number</label>
@@ -350,12 +327,6 @@ const S = {
   subtitle: { fontSize: 14, color: '#667781', margin: '0 0 28px', lineHeight: 1.5 },
   form:     { display: 'flex', flexDirection: 'column' },
   label:    { display: 'block', fontSize: 13, fontWeight: 600, color: '#3b4a54', marginBottom: 8 },
-  roleRow:  { display: 'flex', gap: 8 },
-  roleBtn: {
-    flex: 1, padding: '11px', borderRadius: 9, border: '1.5px solid #d7ddE0', background: '#fff',
-    color: '#3b4a54', fontSize: 14, fontWeight: 600, cursor: 'pointer',
-  },
-  roleBtnOn: { background: '#00a884', borderColor: '#00a884', color: '#fff' },
   phoneRow:  { display: 'flex', gap: 8 },
   countrySelect: {
     flexShrink: 0, width: 130, padding: '11px 8px', borderRadius: 9, border: '1.5px solid #d7ddE0',
