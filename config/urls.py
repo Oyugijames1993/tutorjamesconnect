@@ -30,7 +30,8 @@ def serve_assetlinks(request):
                 "namespace": "android_app",
                 "package_name": "com.tutorjamesconnect",
                 "sha256_cert_fingerprints": [
-                    "02:EE:B7:6D:9E:37:06:F9:D7:BB:A1:2C:55:59:B6:47:EB:0D:78:C2:61:65:13:56:20:B4:B9:E8:3C:B1:A4:D2"
+                    "02:EE:B7:6D:9E:37:06:F9:D7:BB:A1:2C:55:59:B6:47:EB:0D:78:C2:61:65:13:56:20:B4:B9:E8:3C:B1:A4:D2",
+                    "2F:FA:88:D4:D2:19:AC:E7:B6:91:EB:76:0C:58:2B:DA:CC:93:46:A6:18:9D:FC:E1:45:CE:7B:09:92:4F:66:CF"
                 ]
             }
         }
