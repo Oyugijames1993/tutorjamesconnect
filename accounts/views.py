@@ -496,6 +496,18 @@ class SubscribeExpoPushView(APIView):
         if not expo_token:
             return Response({'error': 'expo_token is required.'}, status=400)
 
+        # Only one phone should be receiving push at a time (matches the
+        # single-mobile-device login rule) — drop any other Expo push
+        # subscriptions for this user so a device that lost its session
+        # (kicked out by a newer login elsewhere) stops getting notified,
+        # even if that old device never got a chance to unsubscribe itself.
+        # Web/PWA push subscriptions are untouched — those are legitimately
+        # multi-device.
+        PushSubscription.objects.filter(
+            user=request.user,
+            endpoint__startswith='ExponentPushToken',
+        ).exclude(endpoint=expo_token).delete()
+
         PushSubscription.objects.update_or_create(
             user     = request.user,
             endpoint = expo_token,
