@@ -110,6 +110,34 @@ class RoomAccessToken(models.Model):
         return f"{self.user.display_name} access token ({'used' if self.used_at else 'active'})"
 
 
+class QRLinkSession(models.Model):
+    """
+    WhatsApp-Web-style companion login: the browser creates a pending
+    session and shows a QR code; the phone (already logged in) scans it
+    and confirms the link; the browser then polls and picks up a fresh,
+    unrestricted ('web') token pair for that user. Single-use, short-lived
+    — a scanned-but-unretrieved session is still only good for one poll.
+    """
+    token          = models.CharField(max_length=64, unique=True, editable=False)
+    user           = models.ForeignKey(CustomUser, null=True, blank=True, on_delete=models.CASCADE, related_name='qr_link_sessions')
+    created_at     = models.DateTimeField(auto_now_add=True)
+    linked_at      = models.DateTimeField(null=True, blank=True)
+    retrieved      = models.BooleanField(default=False)
+    cached_access  = models.TextField(blank=True)
+    cached_refresh = models.TextField(blank=True)
+
+    def save(self, *args, **kwargs):
+        if not self.token:
+            self.token = secrets.token_urlsafe(32)
+        super().save(*args, **kwargs)
+
+    def is_expired(self):
+        return timezone.now() > self.created_at + timezone.timedelta(minutes=2)
+
+    def __str__(self):
+        return f"QR link session ({'linked to ' + self.user.display_name if self.user else 'pending'})"
+
+
 class PushSubscription(models.Model):
     """
     One row per browser/device a user has granted notification permission

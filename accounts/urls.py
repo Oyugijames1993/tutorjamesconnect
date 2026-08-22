@@ -22,6 +22,9 @@ from .views import (
     MarkDiscountGivenView,
     MyReferralLinkView,
     SubscribeExpoPushView,
+    CreateQRLinkSessionView,
+    QRLinkSessionStatusView,
+    LinkQRSessionView,
 )
 
 urlpatterns = [
@@ -45,6 +48,10 @@ urlpatterns = [
     path('request-access/',          RequestAccessView.as_view(),          name='request-access'),
     path('admin/access-requests/',   PendingAccessRequestsView.as_view(),  name='pending-access-requests'),
     path('redeem-access/',           RedeemAccessTokenView.as_view(),      name='redeem-access'),
+
+    path('qr-session/create/',            CreateQRLinkSessionView.as_view(), name='qr-session-create'),
+    path('qr-session/<str:token>/status/', QRLinkSessionStatusView.as_view(), name='qr-session-status'),
+    path('qr-session/<str:token>/link/',   LinkQRSessionView.as_view(),      name='qr-session-link'),
 
     # Login
     path('login/', DeviceAwareTokenObtainPairView.as_view(), name='login'),

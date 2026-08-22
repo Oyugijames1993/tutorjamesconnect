@@ -278,6 +278,87 @@ class RedeemAccessTokenView(APIView):
         })
 
 
+# ── QR laptop-linking (WhatsApp-Web style companion login) ──────────────────
+# Flow: browser creates a pending session -> shows QR code encoding a link
+# URL -> phone (already logged in, via its own in-app camera scanner) scans
+# it and confirms -> browser polls and receives an unrestricted 'web' token
+# pair for that user. The phone's own session is completely untouched —
+# this never counts against the single-mobile-device rule, since the
+# tokens issued here never carry a device_session_id claim.
+
+class CreateQRLinkSessionView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from .models import QRLinkSession
+        session = QRLinkSession.objects.create()
+        frontend_base = getattr(settings, 'FRONTEND_URL', 'https://tutorjamesconnect.onrender.com')
+        return Response({
+            'token':      session.token,
+            'qr_content': f'{frontend_base}/link/{session.token}',
+            'expires_in': 120,
+        })
+
+
+class QRLinkSessionStatusView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, token):
+        from .models import QRLinkSession
+        try:
+            session = QRLinkSession.objects.get(token=token)
+        except QRLinkSession.DoesNotExist:
+            return Response({'status': 'invalid'}, status=404)
+
+        if session.is_expired() and not session.linked_at:
+            return Response({'status': 'expired'})
+
+        if not session.linked_at:
+            return Response({'status': 'pending'})
+
+        if session.retrieved:
+            return Response({'status': 'linked'})
+
+        # Hand the tokens over exactly once, then mark retrieved so a
+        # repeated poll (or anyone replaying this token) can't get them
+        # again — the browser already has them stored client-side after this.
+        session.retrieved = True
+        session.save(update_fields=['retrieved'])
+        return Response({
+            'status':  'linked',
+            'user':    UserSerializer(session.user).data,
+            'access':  session.cached_access,
+            'refresh': session.cached_refresh,
+        })
+
+
+class LinkQRSessionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, token):
+        from .models import QRLinkSession
+        try:
+            session = QRLinkSession.objects.get(token=token)
+        except QRLinkSession.DoesNotExist:
+            return Response({'error': 'Invalid or expired QR code.'}, status=400)
+
+        if session.linked_at or session.is_expired():
+            return Response({'error': 'This QR code has expired. Please refresh and try again.'}, status=400)
+
+        # platform=None (default) — this is deliberately NOT tagged as
+        # mobile, so it never touches active_device_token and never counts
+        # against the single-mobile-device rule. The phone's own session
+        # is completely unaffected.
+        tokens = get_tokens_for_user(request.user)
+        session.user           = request.user
+        session.linked_at      = timezone.now()
+        session.cached_access  = tokens['access']
+        session.cached_refresh = tokens['refresh']
+        session.save()
+
+        return Response({'message': f"Linked to {request.user.display_name}'s computer."})
+
+
 # ── Provider Registration ────────────────────────────────────────────────────
 class ProviderRegisterView(generics.CreateAPIView):
     queryset           = CustomUser.objects.all()
