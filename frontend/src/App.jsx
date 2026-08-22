@@ -4,6 +4,7 @@ import RegisterClient from './pages/RegisterClient'
 import RegisterProvider from './pages/RegisterProvider'
 import LostAccess from './pages/LostAccess'
 import RedeemAccess from './pages/RedeemAccess'
+import LinkDevice from './pages/LinkDevice'
 import ProviderDashboard from './pages/ProviderDashboard'
 import Login from './pages/Login'
 import ChatRoom from './pages/ChatRoom'
@@ -31,6 +32,7 @@ function App() {
       <Route path="/lost-access" element={<LostAccess />} />
       <Route path="/ref/:refCode" element={<RedeemRef />} />
       <Route path="/access/:token" element={<RedeemAccess />} />
+      <Route path="/link/:token?" element={<LinkDevice />} />
       <Route
         path="/dashboard"
         element={user ? <ProviderDashboard /> : <Navigate to="/login" replace />}

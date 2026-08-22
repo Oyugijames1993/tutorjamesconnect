@@ -324,11 +324,19 @@ class QRLinkSessionStatusView(APIView):
         # again — the browser already has them stored client-side after this.
         session.retrieved = True
         session.save(update_fields=['retrieved'])
+
+        room_id = None
+        if session.user.role == 'client':
+            from chat.models import ChatRoom
+            room = ChatRoom.objects.filter(client=session.user).first()
+            room_id = room.id if room else None
+
         return Response({
             'status':  'linked',
             'user':    UserSerializer(session.user).data,
             'access':  session.cached_access,
             'refresh': session.cached_refresh,
+            'room_id': room_id,
         })
 
 
