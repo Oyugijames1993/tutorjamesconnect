@@ -498,7 +498,7 @@ export default function AdminDashboard() {
             <div style={S.section}>
               <div style={S.sectionTitle}>Pending Access Requests ({accessRequests.length})</div>
               <div style={{ fontSize: 12, color: '#888', marginBottom: 16 }}>
-                Confirm it's really them, then send the link via WhatsApp.
+                Confirm it's really them, then send the PIN via WhatsApp.
               </div>
               {accessRequests.length === 0 ? <div style={S.emptyState}>✅ No pending access requests</div> : accessRequests.map(r => (
                 <div key={r.id} style={S.pendingCard}>
@@ -510,14 +510,20 @@ export default function AdminDashboard() {
                     <span style={{ fontSize: 12, color: '#888' }}>{r.phone_number || 'No phone'}</span>
                     <span style={S.pendingTime}>{new Date(r.created_at).toLocaleString()}</span>
                   </div>
-                  {!r.is_valid && <div style={{ fontSize: 12, color: '#e53e3e', marginBottom: 8 }}>⚠️ Link expired — ask them to request again.</div>}
+                  {!r.is_valid && <div style={{ fontSize: 12, color: '#e53e3e', marginBottom: 8 }}>⚠️ PIN expired — ask them to request again.</div>}
+                  <div style={{
+                    fontSize: 28, fontWeight: 800, letterSpacing: '0.3em', color: '#111b21',
+                    textAlign: 'center', background: '#f7f8fa', borderRadius: 8, padding: '10px 0', marginBottom: 10,
+                  }}>
+                    {r.pin}
+                  </div>
                   {r.phone_number ? (
                     <a
-                      href={`https://wa.me/${r.phone_number.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${r.user_display}, here's your link back into TutorJamesConnect: ${r.magic_link}`)}`}
+                      href={`https://wa.me/${r.phone_number.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${r.user_display}, your TutorJamesConnect PIN is: ${r.pin}`)}`}
                       target="_blank" rel="noreferrer"
                       style={{ ...S.approveBtn, display: 'inline-block', textDecoration: 'none', textAlign: 'center', opacity: r.is_valid ? 1 : 0.5, pointerEvents: r.is_valid ? 'auto' : 'none' }}
                     >
-                      📲 Send via WhatsApp
+                      📲 Send PIN via WhatsApp
                     </a>
                   ) : (
                     <div style={{ fontSize: 12, color: '#888' }}>No phone number on file.</div>

@@ -1,6 +1,7 @@
 // src/pages/LostAccess.jsx
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
 
 const COUNTRY_CODES = [
@@ -213,13 +214,19 @@ const COUNTRY_CODES = [
 ]
 
 export default function LostAccess() {
+  const navigate = useNavigate()
+  const { login } = useAuth()
+
+  const [step, setStep] = useState('phone') // 'phone' | 'pin'
   const [countryCode, setCountryCode] = useState('+965')
   const [localNumber, setLocalNumber] = useState('')
+  const [pin, setPin] = useState('')
   const [submitting, setSubmitting]   = useState(false)
-  const [submitted, setSubmitted]     = useState(false)
   const [error, setError]             = useState('')
 
-  const handleSubmit = async (e) => {
+  const fullPhone = () => countryCode + localNumber.trim().replace(/^0+/, '')
+
+  const handleRequestSubmit = async (e) => {
     e.preventDefault()
     setError('')
 
@@ -228,12 +235,39 @@ export default function LostAccess() {
       return
     }
 
-    const phone_number = countryCode + localNumber.trim().replace(/^0+/, '')
+    setSubmitting(true)
+    try {
+      await api.post('/accounts/request-access/', { phone_number: fullPhone() })
+      setStep('pin')
+    } catch (err) {
+      setError(err.response?.data?.error || 'Something went wrong. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handlePinSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+
+    if (!pin.trim()) {
+      setError('Please enter the PIN sent to your WhatsApp.')
+      return
+    }
 
     setSubmitting(true)
     try {
-      await api.post('/accounts/request-access/', { phone_number })
-      setSubmitted(true)
+      const res = await api.post('/accounts/verify-pin/', { phone_number: fullPhone(), pin: pin.trim() })
+      const { user, access, refresh, room_id } = res.data
+      login(user, access, refresh)
+
+      if (user.role === 'admin') {
+        navigate('/admin', { replace: true })
+      } else if (user.role === 'client' && room_id) {
+        navigate(`/chat/${room_id}`, { replace: true })
+      } else {
+        navigate('/dashboard', { replace: true })
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Something went wrong. Please try again.')
     } finally {
@@ -246,26 +280,15 @@ export default function LostAccess() {
       <div style={S.card}>
         <div style={S.brandMark}>TJ</div>
 
-        {submitted ? (
-          <>
-            <h1 style={S.title}>Request sent</h1>
-            <p style={S.subtitle}>
-              If that number is registered, the admin has been notified and will
-              send you a fresh link over WhatsApp shortly.
-            </p>
-            <Link to="/login" style={S.backLink}>← Back to login</Link>
-          </>
-        ) : (
+        {step === 'phone' ? (
           <>
             <h1 style={S.title}>Lost access?</h1>
             <p style={S.subtitle}>
-              Tell us your phone number and we'll get you a new link, sent
-              straight to your WhatsApp.
+              Tell us your phone number. Admin will send you a 5-digit PIN on
+              WhatsApp — enter it here to get back in.
             </p>
 
-            <form onSubmit={handleSubmit} style={S.form}>
-
-
+            <form onSubmit={handleRequestSubmit} style={S.form}>
               <div style={{ marginBottom: 16 }}>
                 <label style={S.label}>Phone number</label>
                 <div style={S.phoneRow}>
@@ -292,7 +315,7 @@ export default function LostAccess() {
               {error && <div style={S.errorMsg}>{error}</div>}
 
               <button type="submit" style={{ ...S.submitBtn, opacity: submitting ? 0.7 : 1 }} disabled={submitting}>
-                {submitting ? 'Sending request…' : 'Request Access Link'}
+                {submitting ? 'Sending request…' : 'Request PIN'}
               </button>
             </form>
 
@@ -300,6 +323,46 @@ export default function LostAccess() {
               <Link to="/login" style={S.footerLink}>Back to login</Link>
               <span style={S.footerText}> · </span>
               <Link to="/register/client" style={S.footerLink}>New here? Sign up</Link>
+            </div>
+          </>
+        ) : (
+          <>
+            <h1 style={S.title}>Enter your PIN</h1>
+            <p style={S.subtitle}>
+              Admin has been notified and will send a 5-digit PIN to your
+              WhatsApp shortly. Enter it below once you receive it.
+            </p>
+
+            <form onSubmit={handlePinSubmit} style={S.form}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={S.label}>5-digit PIN</label>
+                <input
+                  style={S.pinInput}
+                  value={pin}
+                  onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                  placeholder="•••••"
+                  inputMode="numeric"
+                  maxLength={5}
+                  disabled={submitting}
+                  autoFocus
+                />
+              </div>
+
+              {error && <div style={S.errorMsg}>{error}</div>}
+
+              <button type="submit" style={{ ...S.submitBtn, opacity: submitting ? 0.7 : 1 }} disabled={submitting}>
+                {submitting ? 'Verifying…' : 'Verify & Log In'}
+              </button>
+            </form>
+
+            <div style={S.footer}>
+              <button
+                type="button"
+                style={S.linkBtn}
+                onClick={() => { setStep('phone'); setPin(''); setError('') }}
+              >
+                ← Use a different number / request again
+              </button>
             </div>
           </>
         )}
@@ -336,6 +399,10 @@ const S = {
     flex: 1, padding: '11px 13px', borderRadius: 9, border: '1.5px solid #d7ddE0',
     fontSize: 14, outline: 'none', boxSizing: 'border-box', minWidth: 0,
   },
+  pinInput: {
+    width: '100%', padding: '14px', borderRadius: 9, border: '1.5px solid #d7ddE0',
+    fontSize: 24, letterSpacing: '0.4em', textAlign: 'center', outline: 'none', boxSizing: 'border-box',
+  },
   errorMsg: {
     fontSize: 13, color: '#e53e3e', background: '#fff0ef', borderRadius: 8,
     padding: '10px 12px', marginBottom: 16,
@@ -345,8 +412,11 @@ const S = {
     background: '#00a884', color: '#fff',
     fontSize: 15, fontWeight: 700, marginTop: 6,
   },
+  linkBtn: {
+    background: 'none', border: 'none', color: '#00a884', fontWeight: 600,
+    fontSize: 13, cursor: 'pointer', padding: 0,
+  },
   footer:     { textAlign: 'center', marginTop: 20, fontSize: 13 },
   footerText: { color: '#bbb' },
   footerLink: { color: '#00a884', fontWeight: 600, textDecoration: 'none' },
-  backLink:   { color: '#00a884', fontWeight: 600, textDecoration: 'none', fontSize: 14 },
 }
