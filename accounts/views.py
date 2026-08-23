@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.throttling import AnonRateThrottle
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils import timezone
@@ -233,6 +234,7 @@ class PendingAccessRequestsView(APIView):
                 'phone_number': t.user.phone_number,
                 'is_valid':     t.is_valid(),
                 'created_at':   t.created_at,
+                'pin':          t.pin,
                 'magic_link':   f'{frontend_base}/access/{t.token}',
             }
             for t in tokens
@@ -263,6 +265,57 @@ class RedeemAccessTokenView(APIView):
         # frontend so it can route there directly. Providers can be in
         # several (or none), so there's no single "their room" to name;
         # the frontend sends them to the general chat view instead.
+        room_id = None
+        if token.user.role == 'client':
+            from chat.models import ChatRoom
+            room = ChatRoom.objects.filter(client=token.user).first()
+            room_id = room.id if room else None
+
+        return Response({
+            'user':    UserSerializer(token.user).data,
+            'access':  tokens['access'],
+            'refresh': tokens['refresh'],
+            'room_id': room_id,
+            'message': 'Welcome back!',
+        })
+
+
+# ── PIN-based recovery (replaces the WhatsApp magic-link tap, which turned
+# out to be unreliable across devices due to Android App Links verification
+# not completing consistently). Admin sends the 5-digit PIN over WhatsApp
+# instead of a link; the person types their phone number + PIN into the
+# app/website directly. Rate-limited via VerifyAccessPinThrottle below,
+# since a 5-digit space (100,000 combinations) needs real protection
+# against brute-forcing once tied only to a known phone number.
+class VerifyAccessPinThrottle(AnonRateThrottle):
+    scope = 'pin_verify'
+
+
+class VerifyAccessPinView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes   = [VerifyAccessPinThrottle]
+
+    def post(self, request):
+        phone_number = request.data.get('phone_number', '').strip()
+        pin          = request.data.get('pin', '').strip()
+
+        if not phone_number or not pin:
+            return Response({'error': 'Phone number and PIN are required.'}, status=400)
+
+        token = RoomAccessToken.objects.filter(
+            user__phone_number=phone_number,
+            pin=pin,
+            used_at__isnull=True,
+        ).select_related('user').order_by('-created_at').first()
+
+        if not token or not token.is_valid():
+            return Response({'error': 'Incorrect PIN, or it has expired. Please request a new one.'}, status=400)
+
+        token.used_at = timezone.now()
+        token.save()
+
+        tokens = get_tokens_for_user(token.user, platform=_client_platform(request))
+
         room_id = None
         if token.user.role == 'client':
             from chat.models import ChatRoom

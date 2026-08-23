@@ -92,6 +92,7 @@ class RoomAccessToken(models.Model):
     """
     user       = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='access_tokens')
     token      = models.CharField(max_length=64, unique=True, editable=False)
+    pin        = models.CharField(max_length=5, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
     used_at    = models.DateTimeField(null=True, blank=True)
@@ -99,6 +100,8 @@ class RoomAccessToken(models.Model):
     def save(self, *args, **kwargs):
         if not self.token:
             self.token = secrets.token_urlsafe(32)
+        if not self.pin:
+            self.pin = ''.join(secrets.choice('0123456789') for _ in range(5))
         if not self.expires_at:
             self.expires_at = timezone.now() + timezone.timedelta(hours=24)
         super().save(*args, **kwargs)

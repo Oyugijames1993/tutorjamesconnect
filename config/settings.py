@@ -143,6 +143,11 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    'DEFAULT_THROTTLE_RATES': {
+        # 5-digit PIN space is only 100,000 combinations — this bounds how
+        # many guesses a single IP can make against the verify-pin endpoint.
+        'pin_verify': '5/min',
+    },
 }
 
 # CORS — allow React frontend to connect

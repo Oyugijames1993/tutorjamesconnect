@@ -15,6 +15,7 @@ from .views import (
     RequestAccessView,
     PendingAccessRequestsView,
     RedeemAccessTokenView,
+    VerifyAccessPinView,
     VapidPublicKeyView,
     SubscribePushView,
     UnsubscribePushView,
@@ -48,6 +49,7 @@ urlpatterns = [
     path('request-access/',          RequestAccessView.as_view(),          name='request-access'),
     path('admin/access-requests/',   PendingAccessRequestsView.as_view(),  name='pending-access-requests'),
     path('redeem-access/',           RedeemAccessTokenView.as_view(),      name='redeem-access'),
+    path('verify-pin/',              VerifyAccessPinView.as_view(),        name='verify-pin'),
 
     path('qr-session/create/',            CreateQRLinkSessionView.as_view(), name='qr-session-create'),
     path('qr-session/<str:token>/status/', QRLinkSessionStatusView.as_view(), name='qr-session-status'),
