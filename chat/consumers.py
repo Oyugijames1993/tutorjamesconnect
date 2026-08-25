@@ -474,11 +474,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def get_file_url(self, file_id):
-        from django.conf import settings
         try:
             f = SharedFile.objects.get(pk=file_id)
-            frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:8000')
-            return frontend_base + settings.MEDIA_URL + f.file.name
+            return f.file.url
         except SharedFile.DoesNotExist:
             return None
 
@@ -573,7 +571,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         file_events = []
         for f in files:
             try:
-                url = 'http://localhost:8000' + settings.MEDIA_URL + f.file.name
+                url = f.file.url
             except Exception:
                 url = ''
 
