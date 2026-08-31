@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.throttling import AnonRateThrottle
-from django.core.mail import send_mail
+from .email_utils import send_brevo_email
 from django.conf import settings
 from django.utils import timezone
 from .models import CustomUser, OTP, RoomAccessToken, PushSubscription, Referral
@@ -206,10 +206,22 @@ class RequestAccessView(APIView):
             )
 
         for user in matches:
-            RoomAccessToken.objects.create(user=user)
+            token = RoomAccessToken.objects.create(user=user)
+
+            if user.email:
+                send_brevo_email(
+                    to_email=user.email,
+                    to_name=user.display_name,
+                    subject='Your TutorJamesConnect Access PIN',
+                    html_content=(
+                        f'<p>Your access PIN is: <strong>{token.pin}</strong></p>'
+                        f'<p>Enter this along with your phone number to log back in. '
+                        f'This PIN expires in 24 hours.</p>'
+                    ),
+                )
 
         return Response({
-            'message': 'Access request sent to admin. You will receive a link on WhatsApp shortly.'
+            'message': "A PIN has been sent to your email. If you dont receive it, admin can also send it manually."
         })
 
 
@@ -474,12 +486,14 @@ class SendOTPView(APIView):
 
         code = OTP.generate_code()
         OTP.objects.create(user=user, code=code)
-
-        send_mail(
+        send_brevo_email(
+            to_email=email,
+            to_name=user.display_name,
             subject='Your TutorJamesConnect Login Code',
-            message=f'Your login code is: {code}\n\nThis code expires in 10 minutes.',
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
+            html_content=(
+                f'<p>Your login code is: <strong>{code}</strong></p>'
+                f'<p>This code expires in 10 minutes.</p>'
+            ),
         )
 
         return Response({'message': 'OTP sent to your email.'})

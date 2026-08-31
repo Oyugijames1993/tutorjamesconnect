@@ -175,14 +175,11 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
 }
 
-# Email settings
-EMAIL_BACKEND       = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST          = 'smtp.gmail.com'
-EMAIL_PORT          = 587
-EMAIL_USE_TLS       = True
-EMAIL_HOST_USER     = 'your@gmail.com'
-EMAIL_HOST_PASSWORD = 'your-app-password'
-DEFAULT_FROM_EMAIL  = 'TutorJamesConnect <your@gmail.com>'
+# Email settings — Brevo (transactional email API)
+BREVO_API_KEY      = os.environ.get('BREVO_API_KEY')
+BREVO_SENDER_EMAIL = os.environ.get('BREVO_SENDER_EMAIL')
+BREVO_SENDER_NAME  = os.environ.get('BREVO_SENDER_NAME', 'TutorJamesConnect')
+DEFAULT_FROM_EMAIL = f'{BREVO_SENDER_NAME} <{BREVO_SENDER_EMAIL or "noreply@tutorjamesconnect.onrender.com"}>'
 
 
 VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', 'MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgzq68O-o_ILHLNEq9wY7qhXSbBZcSGAqUXbGtp09nUjyhRANCAASBmWNOoJDMjRHBtqg3f-Lk-wSn_j-Y6cWJhuabVYf0U7UxvZu4J2nJcQ5hXIIjp6jcZQs3mR8jYCbzjEzxerDC')
