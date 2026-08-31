@@ -116,20 +116,16 @@ class ClientRegisterView(generics.CreateAPIView):
 # nothing to verify yet that a long-lived session doesn't already cover.
 class ClientSignupView(APIView):
     permission_classes = [AllowAny]
-
     def post(self, request):
         from chat.models import ChatRoom, next_client_room_name
-
         serializer = ClientSignupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-
         room = ChatRoom.objects.create(
             name   = next_client_room_name(),
             client = user,
             course = serializer.validated_data.get('course', ''),
         )
-
         # ── Handle referral code ──────────────────────────────────────────────
         ref_code = request.data.get('ref') or request.query_params.get('ref')
         if ref_code:
@@ -140,15 +136,26 @@ class ClientSignupView(APIView):
                     Referral.objects.get_or_create(referrer=referrer, referred=user)
             except CustomUser.DoesNotExist:
                 pass
-
-        tokens = get_tokens_for_user(user, platform=_client_platform(request))
+        # ── Email verification required before login ──────────────────────
+        # Account + room already exist, but no tokens are issued yet. The
+        # frontend shows an "enter your code" step next, which hits
+        # VerifyOTPView with this email + code to actually get logged in.
+        code = OTP.generate_code()
+        OTP.objects.create(user=user, code=code)
+        send_brevo_email(
+            to_email=user.email,
+            to_name=user.display_name,
+            subject='Verify your TutorJamesConnect account',
+            html_content=(
+                f'<p>Your verification code is: <strong>{code}</strong></p>'
+                f'<p>This code expires in 10 minutes.</p>'
+            ),
+        )
         return Response(
             {
-                'user':    UserSerializer(user).data,
+                'email':   user.email,
                 'room_id': room.id,
-                'access':  tokens['access'],
-                'refresh': tokens['refresh'],
-                'message': 'Welcome to TutorJamesConnect!',
+                'message': 'Account created. Enter the code sent to your email to finish signing up.',
             },
             status=status.HTTP_201_CREATED,
         )
@@ -159,19 +166,28 @@ class ClientSignupView(APIView):
 # philosophy to ClientSignupView: no password, logged straight in.
 class ProviderSignupView(APIView):
     permission_classes = [AllowAny]
-
     def post(self, request):
         serializer = ProviderSignupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-
-        tokens = get_tokens_for_user(user, platform=_client_platform(request))
+        # ── Email verification required before login ──────────────────────
+        # See ClientSignupView for the same pattern. Account exists, but no
+        # tokens are issued until the code is verified via VerifyOTPView.
+        code = OTP.generate_code()
+        OTP.objects.create(user=user, code=code)
+        send_brevo_email(
+            to_email=user.email,
+            to_name=user.display_name,
+            subject='Verify your TutorJamesConnect account',
+            html_content=(
+                f'<p>Your verification code is: <strong>{code}</strong></p>'
+                f'<p>This code expires in 10 minutes.</p>'
+            ),
+        )
         return Response(
             {
-                'user':    UserSerializer(user).data,
-                'access':  tokens['access'],
-                'refresh': tokens['refresh'],
-                'message': 'Welcome to TutorJamesConnect! Your profile is ready for admin to review.',
+                'email':   user.email,
+                'message': 'Account created. Enter the code sent to your email to finish signing up.',
             },
             status=status.HTTP_201_CREATED,
         )
@@ -526,6 +542,12 @@ class VerifyOTPView(APIView):
 
         otp.is_used = True
         otp.save()
+
+        # Signup verification completes here too — harmless no-op for
+        # already-verified users logging in via OTP normally.
+        if not user.is_verified:
+            user.is_verified = True
+            user.save(update_fields=['is_verified'])
 
         tokens = get_tokens_for_user(user, platform=_client_platform(request))
         return Response({
