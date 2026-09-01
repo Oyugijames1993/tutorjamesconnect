@@ -89,10 +89,7 @@ export default function RegisterProvider() {
         bio:            form.bio,
       })
 
-      login(res.data.user, res.data.access, res.data.refresh)
-      // Providers don't get a room at signup — land them on their live
-      // dashboard, which will pick up any room the moment admin assigns one.
-      navigate('/dashboard', { replace: true })
+      navigate('/verify-email', { replace: true, state: { email: form.email } })
 
     } catch (err) {
       const errors = err.response?.data

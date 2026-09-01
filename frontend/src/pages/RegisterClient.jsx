@@ -238,8 +238,8 @@ export default function RegisterClient() {
     setGeneralError('')
     setErrors({})
 
-    if (!form.full_name.trim() || !form.email.trim() || !form.phone_number.trim()) {
-      setGeneralError('Full name, email, and phone number are required.')
+    if (!form.full_name.trim() || !form.email.trim() || !form.phone_number.trim() || !form.course.trim()) {
+      setGeneralError('All fields are required.')
       return
     }
 
@@ -254,9 +254,7 @@ export default function RegisterClient() {
         ...(refCode ? { ref: refCode } : {})
       })
       localStorage.removeItem('ref_code')
-      const { user, access, refresh, room_id } = res.data
-      login(user, access, refresh)
-      navigate(`/chat/${room_id}`, { replace: true })
+      navigate('/verify-email', { replace: true, state: { email: form.email } })
     } catch (err) {
       const data = err.response?.data
       if (data && typeof data === 'object') {
@@ -323,7 +321,7 @@ export default function RegisterClient() {
             </div>
           </Field>
 
-          <Field label="Course (optional)" error={errors.course}>
+          <Field label="Course" error={errors.course}>
             <input
               style={S.input}
               value={form.course}

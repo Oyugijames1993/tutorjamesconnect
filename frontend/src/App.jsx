@@ -2,6 +2,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import RegisterClient from './pages/RegisterClient'
 import RegisterProvider from './pages/RegisterProvider'
+import VerifyEmail from './pages/VerifyEmail'
 import LostAccess from './pages/LostAccess'
 import RedeemAccess from './pages/RedeemAccess'
 import LinkDevice from './pages/LinkDevice'
@@ -29,6 +30,7 @@ function App() {
       <Route path="/login" element={user ? rootRedirect() : <Login />} />
       <Route path="/register/client" element={<RegisterClient />} />
       <Route path="/register/provider" element={<RegisterProvider />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
       <Route path="/lost-access" element={<LostAccess />} />
       <Route path="/ref/:refCode" element={<RedeemRef />} />
       <Route path="/access/:token" element={<RedeemAccess />} />
