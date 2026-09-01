@@ -251,7 +251,7 @@ export default function LostAccess() {
     setError('')
 
     if (!pin.trim()) {
-      setError('Please enter the PIN sent to your WhatsApp.')
+      setError('Please enter the PIN sent to your email.')
       return
     }
 
@@ -284,8 +284,8 @@ export default function LostAccess() {
           <>
             <h1 style={S.title}>Lost access?</h1>
             <p style={S.subtitle}>
-              Tell us your phone number. Admin will send you a 5-digit PIN on
-              WhatsApp — enter it here to get back in.
+              Tell us your phone number and a 5-digit PIN will be sent to
+              your email — enter it here to get back in.
             </p>
 
             <form onSubmit={handleRequestSubmit} style={S.form}>
@@ -329,8 +329,8 @@ export default function LostAccess() {
           <>
             <h1 style={S.title}>Enter your PIN</h1>
             <p style={S.subtitle}>
-              Admin has been notified and will send a 5-digit PIN to your
-              WhatsApp shortly. Enter it below once you receive it.
+              A 5-digit PIN has been sent to your email. Enter it below
+              once you receive it.
             </p>
 
             <form onSubmit={handlePinSubmit} style={S.form}>
