@@ -122,15 +122,25 @@ class ClientSignupSerializer(serializers.Serializer):
     course       = serializers.CharField(max_length=200)
 
     def validate_email(self, value):
-        if CustomUser.objects.filter(email=value).exists():
-            raise serializers.ValidationError('This email is already registered.')
+        # A stale unverified account (someone who signed up but never
+        # entered their code — got busy, checked spam too late, etc.)
+        # shouldn't permanently block that email from ever signing up
+        # again. Delete it and let this attempt proceed cleanly instead.
+        existing = CustomUser.objects.filter(email=value).first()
+        if existing:
+            if existing.is_verified:
+                raise serializers.ValidationError('This email is already registered.')
+            existing.delete()
         return value
 
     def validate_phone_number(self, value):
-        if CustomUser.objects.filter(phone_number=value, role='client').exists():
-            raise serializers.ValidationError(
-                'This phone number is already registered. Use "Lost access?" to get back into your room.'
-            )
+        existing = CustomUser.objects.filter(phone_number=value, role='client').first()
+        if existing:
+            if existing.is_verified:
+                raise serializers.ValidationError(
+                    'This phone number is already registered. Use "Lost access?" to get back into your room.'
+                )
+            existing.delete()
         return value
 
     def create(self, validated_data):
@@ -167,15 +177,21 @@ class ProviderSignupSerializer(serializers.Serializer):
     portfolio_url  = serializers.URLField(required=False, allow_blank=True)
 
     def validate_email(self, value):
-        if CustomUser.objects.filter(email=value).exists():
-            raise serializers.ValidationError('This email is already registered.')
+        existing = CustomUser.objects.filter(email=value).first()
+        if existing:
+            if existing.is_verified:
+                raise serializers.ValidationError('This email is already registered.')
+            existing.delete()
         return value
 
     def validate_phone_number(self, value):
-        if CustomUser.objects.filter(phone_number=value, role='provider').exists():
-            raise serializers.ValidationError(
-                'This phone number is already registered. Use "Lost access?" to get back in.'
-            )
+        existing = CustomUser.objects.filter(phone_number=value, role='provider').first()
+        if existing:
+            if existing.is_verified:
+                raise serializers.ValidationError(
+                    'This phone number is already registered. Use "Lost access?" to get back in.'
+                )
+            existing.delete()
         return value
 
     def create(self, validated_data):
