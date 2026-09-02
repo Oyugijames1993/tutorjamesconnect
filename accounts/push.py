@@ -15,13 +15,21 @@ def send_push_to_user(user, title, body, sound_type='message', url=None):
     for sub in subs:
         # Expo push token (native app)
         if sub.endpoint.startswith('ExponentPushToken'):
-            send_expo_push(sub.endpoint, title, body, url)
+            send_expo_push(sub.endpoint, title, body, sound_type, url)
         else:
             # Web push (PWA)
             send_web_push(sub, title, body, sound_type, url)
 
-def send_expo_push(token, title, body, url=None):
-    """Send push notification via Expo's push service."""
+def send_expo_push(token, title, body, sound_type='message', url=None):
+    """
+    Send push notification via Expo's push service. Android reads the
+    notification sound from the channel, not this payload's 'sound' field —
+    so 'channelId' is what actually determines which sound plays; see the
+    two channels ('default'/'urgent') set up in services/notifications.js
+    on the app side. iOS does use the 'sound' field directly.
+    """
+    channel_id = 'urgent' if sound_type == 'pending' else 'default'
+    ios_sound  = 'urgent.wav' if sound_type == 'pending' else 'default'
     try:
         response = requests.post(
             'https://exp.host/--/api/v2/push/send',
@@ -30,12 +38,13 @@ def send_expo_push(token, title, body, url=None):
                 'Content-Type': 'application/json',
             },
             json={
-                'to':       token,
-                'title':    title,
-                'body':     body,
-                'sound':    'default',
-                'data':     { 'url': url or '/' },
-                'priority': 'high',
+                'to':        token,
+                'title':     title,
+                'body':      body,
+                'sound':     ios_sound,
+                'channelId': channel_id,
+                'data':      { 'url': url or '/' },
+                'priority':  'high',
             },
             timeout=10,
         )
