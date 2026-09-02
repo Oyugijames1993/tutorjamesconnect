@@ -100,7 +100,7 @@ def next_client_room_name():
         counter, _ = RoomCounter.objects.select_for_update().get_or_create(pk=1)
         counter.value += 1
         counter.save()
-        return f"Client {counter.value}"
+        return f"Room {counter.value}"
 
 
 class SharedFile(models.Model):
