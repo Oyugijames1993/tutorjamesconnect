@@ -7,6 +7,16 @@ import useNotificationSound, { SOUND_PROFILES } from '../hooks/useNotificationSo
 import usePushNotifications from '../hooks/usePushNotifications'
 import InstallBanner from '../components/InstallBanner'
 
+// Backend sends timestamps as ISO 8601 (UTC). Format in the browser's own
+// local timezone at display time, same as WhatsApp — this is what makes
+// "07:18" actually mean 07:18 in Nairobi, not 07:18 UTC.
+function formatTime(isoString) {
+  if (!isoString) return ''
+  const d = new Date(isoString)
+  if (isNaN(d.getTime())) return isoString // already-formatted fallback (e.g. cached old data)
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
 const C = {
   navy:'#075e54',navyHover:'#064e45',gold:'#00a884',goldDark:'#008a6e',goldLight:'#e7f8f3',goldBorder:'#b6e6d8',
   bg:'#f0f2f5',sidebarBg:'#ffffff',chatBg:'#efeae2',border:'#e9edef',borderLight:'#f0f2f5',
@@ -524,7 +534,7 @@ export default function ChatRoom() {
                           </div>
                         )}
                       </div>
-                      <div style={S.msgTime}>{msg.time}</div>
+                      <div style={S.msgTime}>{formatTime(msg.time)}</div>
                     </div>
                   </div>
                 )
@@ -561,7 +571,7 @@ export default function ChatRoom() {
                     </div>
                     {isRedirected && (isAdmin || isMe) && (<div style={{ ...S.visPill, background: C.adminBg, color: C.adminText, justifyContent: isMe ? 'flex-end' : 'flex-start' }}>🔒 {isMe ? 'Kept private with admin' : `Kept private (from ${msg.sender})`}</div>)}
                     {showVis && (<div style={{ ...S.visPill, background: visColor.bg, color: visColor.text, justifyContent: isMe ? 'flex-end' : 'flex-start' }}>👁 Visible to: {msg.target === 'client' ? 'Client only' : msg.target === 'provider' ? 'Provider only' : 'Admin only'}</div>)}
-                    <div style={{ ...S.msgTime, textAlign: isMe ? 'right' : 'left' }}>{msg.time}{isMe && !isFlagged && <span style={{ color: C.gold, marginLeft: 4 }}>✓✓</span>}</div>
+                    <div style={{ ...S.msgTime, textAlign: isMe ? 'right' : 'left' }}>{formatTime(msg.time)}{isMe && !isFlagged && <span style={{ color: C.gold, marginLeft: 4 }}>✓✓</span>}</div>
                   </div>
                   {!isMe && <button className="tjc-reply-btn" style={S.replyIconBtn} onClick={() => setReplyingTo(msg)} title="Reply">↩</button>}
                 </div>

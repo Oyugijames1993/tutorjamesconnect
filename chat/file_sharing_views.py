@@ -121,7 +121,7 @@ class UploadFileView(APIView):
                 'sender':    user.display_name,
                 'sender_id': user.id,
                 'role':      user.role,
-                'time':      shared.uploaded_at.strftime('%H:%M'),
+                'time':      shared.uploaded_at.isoformat(),
             })
 
             from accounts.models import CustomUser
@@ -147,7 +147,7 @@ class UploadFileView(APIView):
             'file_url':  shared.file.url,
             'sender':    user.display_name,
             'role':      user.role,
-            'time':      shared.uploaded_at.strftime('%H:%M'),
+            'time':      shared.uploaded_at.isoformat(),
         })
         send_push_to_users(
             _room_everyone(room, exclude_id=user.id),
@@ -188,7 +188,7 @@ class ApproveFileView(APIView):
             'file_url':  file_url,
             'sender':    shared.sender.display_name,
             'role':      shared.sender.role,
-            'time':      shared.approved_at.strftime('%H:%M'),
+            'time':      shared.approved_at.isoformat(),
         })
         send_push_to_users(
             _room_everyone(shared.room, exclude_id=request.user.id),

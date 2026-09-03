@@ -141,7 +141,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'target':         'admin',
                     'redirected':     True,
                     'reply_to':       reply_preview,
-                    'time':           msg.timestamp.strftime('%H:%M'),
+                    'time':           msg.timestamp.isoformat(),
                 }
             )
             recipients = await self.get_push_recipients(room, 'admin', self.user.id)
@@ -168,7 +168,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'role':   self.user.role,
                 'target': target,
                 'reply_to': reply_preview,
-                'time':   msg.timestamp.strftime('%H:%M'),
+                'time':   msg.timestamp.isoformat(),
             }))
 
             # ── Notify admin panel ────────────────────────────────────────────
@@ -201,7 +201,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'role':           self.user.role,
                     'target':         target,
                     'reply_to':       reply_preview,
-                    'time':           msg.timestamp.strftime('%H:%M'),
+                    'time':           msg.timestamp.isoformat(),
                 }
             )
             recipients = await self.get_push_recipients(room, 'admin', self.user.id)
@@ -226,7 +226,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'role':           self.user.role,
                 'target':         target,
                 'reply_to':       reply_preview,
-                'time':           msg.timestamp.strftime('%H:%M'),
+                'time':           msg.timestamp.isoformat(),
             }
         )
         recipients = await self.get_push_recipients(room, target, self.user.id)
@@ -560,7 +560,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'target':     m.target,
                 'redirected': bool(m.flagged and m.target == 'admin' and m.status != 'pending'),
                 'reply_to':   ({'id': m.reply_to.id, 'sender': m.reply_to.sender.display_name, 'body': m.reply_to.body[:120]} if m.reply_to_id else None),
-                'time':       m.timestamp.strftime('%H:%M'),
+                'time':       m.timestamp.isoformat(),
                 '_ts':        m.timestamp,
             }
             for m in msgs
@@ -611,7 +611,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'sender':    f.sender.display_name,
                 'role':      f.sender.role,
                 'status':    f.status,
-                'time':      f.uploaded_at.strftime('%H:%M'),
+                'time':      f.uploaded_at.isoformat(),
                 '_ts':       f.uploaded_at,
             })
 
