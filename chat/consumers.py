@@ -515,6 +515,23 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     seen.add(m.id); unique.append(m)
             msgs = unique
 
+            # Scope to this provider's own membership windows — never show
+            # anything sent while they were removed from the room, even if
+            # they've since been re-added. Their own messages are always
+            # kept as-is (they could only have sent them while a member).
+            from .models import ProviderMembership
+            windows = list(
+                ProviderMembership.objects
+                .filter(room=room, provider=self.user)
+                .values_list('joined_at', 'left_at')
+            )
+            def _in_a_window(ts):
+                return any(
+                    joined <= ts and (left is None or ts <= left)
+                    for joined, left in windows
+                )
+            msgs = [m for m in msgs if m.sender_id == self.user.id or _in_a_window(m.timestamp)]
+
         else:
             # Client
             msgs = list(

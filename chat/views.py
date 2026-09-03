@@ -58,14 +58,33 @@ class ChatRoomCreateView(generics.CreateAPIView):
 class MessageListView(generics.ListAPIView):
     serializer_class   = MessageSerializer
     permission_classes = [IsAuthenticated]
-
     def get_queryset(self):
         room_id = self.kwargs['room_id']
         room    = get_object_or_404(ChatRoom, pk=room_id)
         user    = self.request.user
         if not room.is_member(user):
             return Message.objects.none()
-        return room.messages.filter(status__in=['sent', 'approved'])
+        qs = room.messages.filter(status__in=['sent', 'approved'])
+        if user.role == 'provider':
+            # Same membership-window scoping as the WebSocket history path
+            # in consumers.py — never show messages sent while this
+            # provider was removed from the room, even across multiple
+            # remove/re-add cycles.
+            from .models import ProviderMembership
+            windows = list(
+                ProviderMembership.objects
+                .filter(room=room, provider=user)
+                .values_list('joined_at', 'left_at')
+            )
+            visible_ids = [
+                m.id for m in qs
+                if m.sender_id == user.id or any(
+                    joined <= m.timestamp and (left is None or m.timestamp <= left)
+                    for joined, left in windows
+                )
+            ]
+            qs = qs.filter(id__in=visible_ids)
+        return qs
 
 
 class SendMessageView(APIView):
@@ -285,6 +304,15 @@ class RemoveProviderView(APIView):
         if room.providers.count() == 0:
             room.status = 'negotiating'
             room.save()
+
+        # Close their open membership window so anything sent from this
+        # point forward (until/unless they're re-added) is invisible to
+        # them in message history.
+        from django.utils import timezone
+        from .models import ProviderMembership
+        ProviderMembership.objects.filter(
+            room=room, provider=provider, left_at__isnull=True
+        ).update(left_at=timezone.now())
 
         # No removal message — provider identity is hidden from clients
 

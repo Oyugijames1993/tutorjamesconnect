@@ -124,3 +124,23 @@ class SharedFile(models.Model):
     def __str__(self):
         return f"{self.sender.username} → {self.file_name} [{self.status}]"
 
+
+
+class ProviderMembership(models.Model):
+    """
+    Tracks each individual window a provider spent as a member of a room —
+    one row per join/leave cycle, since a provider can be added, removed,
+    and re-added to the same permanent room over its lifetime. Used to
+    scope what message history a provider can see: only messages sent
+    during a window where they actually had an open (left_at=None) or
+    since-closed membership covering that timestamp — never messages sent
+    while they were removed, even if they're back in the room now.
+    """
+    room       = models.ForeignKey(ChatRoom, on_delete=models.CASCADE, related_name='provider_memberships')
+    provider   = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='room_memberships')
+    joined_at  = models.DateTimeField(auto_now_add=True)
+    left_at    = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        state = 'active' if self.left_at is None else f'left {self.left_at}'
+        return f"{self.provider.display_name} in {self.room.name} ({state})"
