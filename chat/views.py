@@ -185,7 +185,6 @@ class PendingFilesView(APIView):
 
 class ApproveMessageView(APIView):
     permission_classes = [IsAuthenticated]
-
     def post(self, request, message_id):
         if request.user.role != 'admin':
             return Response(
@@ -195,27 +194,78 @@ class ApproveMessageView(APIView):
         msg = get_object_or_404(Message, pk=message_id, status='pending')
         msg.status = 'approved'
         msg.save()
+
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f'chat_{msg.room_id}',
+            {
+                'type':      'message_approved',
+                'id':        msg.id,
+                'body':      msg.body,
+                'sender':    msg.sender.display_name,
+                'sender_id': msg.sender_id,
+                'role':      msg.sender.role,
+                'target':    msg.target,
+                'time':      msg.timestamp.isoformat(),
+            }
+        )
+
         return Response(
             {
                 'message': MessageSerializer(msg).data,
                 'detail':  'Message approved and delivered to client.',
             }
         )
-
-
 class RejectMessageView(APIView):
     permission_classes = [IsAuthenticated]
-
     def post(self, request, message_id):
         if request.user.role != 'admin':
             return Response(
                 {'error': 'Only admins can reject messages.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        # Kept in the database with status='rejected' rather than deleted —
+        # this is deliberate: it's evidence admin can refer back to (e.g.
+        # a provider repeatedly trying to share contact info), and both
+        # admin and the original sender should still see it, tagged
+        # "Rejected", rather than it silently vanishing.
         msg = get_object_or_404(Message, pk=message_id, status='pending')
         msg.status = 'rejected'
         msg.save()
+
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f'chat_{msg.room_id}',
+            {
+                'type':      'message_rejected',
+                'id':        msg.id,
+                'body':      msg.body,
+                'sender':    msg.sender.display_name,
+                'sender_id': msg.sender_id,
+                'role':      msg.sender.role,
+                'target':    msg.target,
+                'time':      msg.timestamp.isoformat(),
+            }
+        )
+
         return Response({'detail': 'Message rejected.'})
+class CheckMessageView(APIView):
+    """
+    Dry-run moderation check — runs the same rules SendMessageView/the
+    WebSocket consumer use, but saves nothing. Lets the app warn a
+    provider BEFORE they actually send a message that's likely to get
+    held for admin review (e.g. it looks like a phone number or social
+    handle), so they can choose to proceed or rewrite it.
+    """
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        body = request.data.get('body', '').strip()
+        action, reason = moderate_message(request.user.role, body)
+        return Response({'action': action, 'reason': reason})
 
 
 class InviteProviderView(APIView):

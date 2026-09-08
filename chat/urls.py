@@ -10,6 +10,7 @@ from .views import (
     PendingFilesView,
     ApproveMessageView,
     RejectMessageView,
+    CheckMessageView,
     InviteProviderView,
     RemoveProviderView,
     RoomSettingsView,
@@ -28,6 +29,7 @@ urlpatterns = [
 
     path('rooms/<int:room_id>/messages/',    MessageListView.as_view(), name='message-list'),
     path('rooms/<int:room_id>/send/',        SendMessageView.as_view(), name='send-message'),
+    path('rooms/<int:room_id>/check-message/', CheckMessageView.as_view(), name='check-message'),
     path('rooms/<int:room_id>/upload-file/', UploadFileView.as_view(),  name='upload-file'),
 
     path('admin/pending/',                           PendingMessagesView.as_view(), name='pending-messages'),

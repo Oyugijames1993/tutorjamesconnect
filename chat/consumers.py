@@ -418,6 +418,52 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'id':   event['id'],
         }))
 
+    async def message_approved(self, event):
+        """
+        A previously-held (pending) message was approved by admin — deliver
+        it now, same shape as a normal chat_message, so it appears in the
+        thread for anyone who can see its target.
+        """
+        target    = event.get('target', 'everyone')
+        role      = self.user.role
+        is_admin  = role == 'admin'
+        is_owner  = event.get('sender_id') == self.user.id
+        if not (is_admin or is_owner or self._can_see(target, role, is_owner)):
+            return
+        await self.send(text_data=json.dumps({
+            'type':   'message',
+            'id':     event['id'],
+            'body':   event['body'],
+            'sender': event['sender'],
+            'role':   event['role'],
+            'status': 'approved',
+            'target': target,
+            'time':   event['time'],
+        }))
+
+    async def message_rejected(self, event):
+        """
+        A previously-held (pending) message was rejected by admin. Sent to
+        both admin (as a permanent record — evidence, not something that
+        should vanish) and the original sender (so they see it tagged
+        "Rejected" rather than it just disappearing).
+        """
+        role     = self.user.role
+        is_admin = role == 'admin'
+        is_owner = event.get('sender_id') == self.user.id
+        if not (is_admin or is_owner):
+            return
+        await self.send(text_data=json.dumps({
+            'type':   'message',
+            'id':     event['id'],
+            'body':   event['body'],
+            'sender': event['sender'],
+            'role':   event['role'],
+            'status': 'rejected',
+            'target': event.get('target', 'everyone'),
+            'time':   event['time'],
+        }))
+
     @database_sync_to_async
     def get_push_recipients(self, room, target, sender_id):
         """
@@ -490,7 +536,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         if role == 'admin':
             msgs = list(
-                room.messages.filter(status__in=['sent', 'approved', 'pending'])
+                room.messages.filter(status__in=['sent', 'approved', 'pending', 'rejected'])
                 .select_related('sender', 'reply_to__sender')
                 .order_by('timestamp')[:200]
             )
