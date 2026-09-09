@@ -17,6 +17,7 @@ class CustomUser(AbstractUser):
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     email        = models.EmailField(unique=True)
     client_id    = models.CharField(max_length=20, unique=True, blank=True, null=True)
+    provider_number = models.PositiveIntegerField(null=True, blank=True, unique=True)
     is_verified  = models.BooleanField(default=False)
     created_at   = models.DateTimeField(auto_now_add=True)
     active_device_token = models.CharField(max_length=64, blank=True, null=True)
@@ -36,6 +37,15 @@ class CustomUser(AbstractUser):
             super().save(*args, **kwargs)  # save first to get a primary key
             self.client_id = f'client{100 + self.pk}'
             CustomUser.objects.filter(pk=self.pk).update(client_id=self.client_id)
+        elif self.role == 'provider' and not self.provider_number:
+            from django.db import transaction
+            super().save(*args, **kwargs)
+            with transaction.atomic():
+                counter, _ = ProviderNumberCounter.objects.select_for_update().get_or_create(pk=1)
+                counter.value += 1
+                counter.save()
+                self.provider_number = counter.value
+            CustomUser.objects.filter(pk=self.pk).update(provider_number=self.provider_number)
         else:
             super().save(*args, **kwargs)
 
@@ -46,6 +56,20 @@ class CustomUser(AbstractUser):
         if self.role == 'client' and self.client_id:
             return self.client_id
         return self.first_name or self.username
+
+    @property
+    def client_facing_name(self):
+        """
+        What a CLIENT sees for this user instead of their real name — admin
+        always shows as "TutorJames", providers are anonymized as
+        "TutorJames N". Used only when the viewer is a client; admin and
+        providers still see each other's real names via display_name.
+        """
+        if self.role == 'admin':
+            return 'TutorJames'
+        if self.role == 'provider' and self.provider_number:
+            return f'TutorJames {self.provider_number}'
+        return self.display_name
 
     def __str__(self):
         return f"{self.display_name} ({self.role})"
@@ -186,3 +210,13 @@ class Referral(models.Model):
         return f'{self.referrer.display_name} → {self.referred.display_name}'
 
 
+
+
+class ProviderNumberCounter(models.Model):
+    """
+    A single-row atomic counter for assigning provider_number values.
+    Mirrors chat.models.RoomCounter — the select_for_update() row lock in
+    CustomUser.save() prevents two concurrent provider signups from ever
+    being handed the same number.
+    """
+    value = models.PositiveIntegerField(default=0)

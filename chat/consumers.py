@@ -136,6 +136,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'id':             msg.id,
                     'body':           body,
                     'sender':         self.user.display_name,
+                    'sender_client_facing': self.user.client_facing_name,
                     'sender_channel': self.channel_name,
                     'role':           self.user.role,
                     'target':         'admin',
@@ -165,6 +166,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'status': 'pending',
                 'reason': reason,
                 'sender': self.user.display_name,
+                'sender_client_facing': self.user.client_facing_name,
                 'role':   self.user.role,
                 'target': target,
                 'reply_to': reply_preview,
@@ -180,6 +182,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'body':      body,
                     'reason':    reason,
                     'sender':    self.user.display_name,
+                    'sender_client_facing': self.user.client_facing_name,
                     'room_id':   self.room_id,
                     'room_name': room.name,
                     'target':    target,
@@ -197,6 +200,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'status':         'pending',
                     'reason':         reason,
                     'sender':         self.user.display_name,
+                    'sender_client_facing': self.user.client_facing_name,
                     'sender_channel': self.channel_name,
                     'role':           self.user.role,
                     'target':         target,
@@ -222,6 +226,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'id':             msg.id,
                 'body':           body,
                 'sender':         self.user.display_name,
+                'sender_client_facing': self.user.client_facing_name,
                 'sender_channel': self.channel_name,   # ← added so sender can be identified
                 'role':           self.user.role,
                 'target':         target,
@@ -230,13 +235,27 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }
         )
         recipients = await self.get_push_recipients(room, target, self.user.id)
-        await sync_to_async(send_push_to_users)(
-            recipients,
-            title=(f'Private message — {room.name}' if target == 'admin' else f'{self.user.display_name} — {room.name}'),
-            body=body[:120],
-            sound_type=('pending' if target == 'admin' else 'message'),
-            url=f'/chat/{room.id}',
-        )
+        # Clients get a push showing the anonymized sender name; admin and
+        # providers get the real one — split into two batches since a
+        # single push send() only supports one shared title for everyone.
+        client_recipients     = [r for r in recipients if r.role == 'client']
+        non_client_recipients = [r for r in recipients if r.role != 'client']
+        if target != 'admin' and client_recipients:
+            await sync_to_async(send_push_to_users)(
+                client_recipients,
+                title=f'{self.user.client_facing_name} — {room.name}',
+                body=body[:120],
+                sound_type='message',
+                url=f'/chat/{room.id}',
+            )
+        if non_client_recipients:
+            await sync_to_async(send_push_to_users)(
+                non_client_recipients,
+                title=(f'Private message — {room.name}' if target == 'admin' else f'{self.user.display_name} — {room.name}'),
+                body=body[:120],
+                sound_type=('pending' if target == 'admin' else 'message'),
+                url=f'/chat/{room.id}',
+            )
 
     # ── Visibility helper ─────────────────────────────────────────────────────
 
@@ -269,11 +288,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if not self._can_see(target, role, is_sender):
             return
 
+        sender_name = event.get('sender_client_facing', event['sender']) if role == 'client' else event['sender']
         await self.send(text_data=json.dumps({
             'type':       'message',
             'id':         event['id'],
             'body':       event['body'],
-            'sender':     event['sender'],
+            'sender':     sender_name,
             'role':       event['role'],
             'target':     target,
             'redirected': event.get('redirected', False),
@@ -338,11 +358,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if not self._can_see(target, role, is_sender):
             return
 
+        sender_name = event.get('sender_client_facing', event['sender']) if role == 'client' else event['sender']
         await self.send(text_data=json.dumps({
             'type':   'message',
             'id':     event['id'],
             'body':   event['body'],
-            'sender': event['sender'],
+            'sender': sender_name,
             'role':   event['role'],
             'target': target,
             'time':   event['time'],
@@ -388,6 +409,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
 
     async def file_approved(self, event):
+        sender_name = event.get('sender_client_facing', event['sender']) if self.user.role == 'client' else event['sender']
         await self.send(text_data=json.dumps({
             'type':      'file',
             'id':        f"file_{event['id']}",
@@ -395,7 +417,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'file_name': event['file_name'],
             'file_size': event['file_size'],
             'file_url':  event['file_url'],
-            'sender':    event['sender'],
+            'sender':    sender_name,
             'role':      event['role'],
             'status':    'approved',
             'time':      event['time'],
@@ -430,11 +452,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
         is_owner  = event.get('sender_id') == self.user.id
         if not (is_admin or is_owner or self._can_see(target, role, is_owner)):
             return
+        sender_name = event.get('sender_client_facing', event['sender']) if role == 'client' else event['sender']
         await self.send(text_data=json.dumps({
             'type':   'message',
             'id':     event['id'],
             'body':   event['body'],
-            'sender': event['sender'],
+            'sender': sender_name,
             'role':   event['role'],
             'status': 'approved',
             'target': target,
@@ -595,17 +618,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     seen.add(m.id); unique.append(m)
             msgs = unique
 
+        # Clients see anonymized names for admin/providers; admin and
+        # providers always see everyone's real name.
+        def _sender_name(u):
+            return u.client_facing_name if role == 'client' else u.display_name
+
         text_events = [
             {
                 'type':       'message',
                 'id':         m.id,
                 'body':       m.body,
-                'sender':     m.sender.display_name,
+                'sender':     _sender_name(m.sender),
                 'role':       m.sender.role,
                 'status':     m.status,
                 'target':     m.target,
                 'redirected': bool(m.flagged and m.target == 'admin' and m.status != 'pending'),
-                'reply_to':   ({'id': m.reply_to.id, 'sender': m.reply_to.sender.display_name, 'body': m.reply_to.body[:120]} if m.reply_to_id else None),
+                'reply_to':   ({'id': m.reply_to.id, 'sender': _sender_name(m.reply_to.sender), 'body': m.reply_to.body[:120]} if m.reply_to_id else None),
                 'time':       m.timestamp.isoformat(),
                 '_ts':        m.timestamp,
             }
@@ -654,7 +682,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'file_name': f.file_name,
                 'file_size': _fmt_size(f.file_size),
                 'file_url':  file_url,
-                'sender':    f.sender.display_name,
+                'sender':    _sender_name(f.sender),
                 'role':      f.sender.role,
                 'status':    f.status,
                 'time':      f.uploaded_at.isoformat(),

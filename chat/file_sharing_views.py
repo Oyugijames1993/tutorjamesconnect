@@ -146,16 +146,29 @@ class UploadFileView(APIView):
             'file_size': _format_size(shared.file_size),
             'file_url':  shared.file.url,
             'sender':    user.display_name,
+            'sender_client_facing': user.client_facing_name,
             'role':      user.role,
             'time':      shared.uploaded_at.isoformat(),
         })
-        send_push_to_users(
-            _room_everyone(room, exclude_id=user.id),
-            title=f'{user.display_name} — {room.name}',
-            body=f'Shared a file: {shared.file_name}',
-            sound_type='message',
-            url=f'/chat/{room.id}',
-        )
+        everyone = _room_everyone(room, exclude_id=user.id)
+        client_recipients     = [r for r in everyone if r.role == 'client']
+        non_client_recipients = [r for r in everyone if r.role != 'client']
+        if client_recipients:
+            send_push_to_users(
+                client_recipients,
+                title=f'{user.client_facing_name} — {room.name}',
+                body=f'Shared a file: {shared.file_name}',
+                sound_type='message',
+                url=f'/chat/{room.id}',
+            )
+        if non_client_recipients:
+            send_push_to_users(
+                non_client_recipients,
+                title=f'{user.display_name} — {room.name}',
+                body=f'Shared a file: {shared.file_name}',
+                sound_type='message',
+                url=f'/chat/{room.id}',
+            )
         return Response({
             'detail':  'File shared.',
             'file_id': shared.id,
@@ -187,6 +200,7 @@ class ApproveFileView(APIView):
             'file_size': _format_size(shared.file_size),
             'file_url':  file_url,
             'sender':    shared.sender.display_name,
+            'sender_client_facing': shared.sender.client_facing_name,
             'role':      shared.sender.role,
             'time':      shared.approved_at.isoformat(),
         })

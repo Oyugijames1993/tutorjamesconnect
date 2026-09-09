@@ -11,7 +11,7 @@ class ProviderProfileSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    display_name     = serializers.ReadOnlyField()
+    display_name     = serializers.SerializerMethodField()
     provider_profile = ProviderProfileSerializer(read_only=True)
 
     class Meta:
@@ -19,6 +19,30 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'display_name', 'client_id', 'first_name', 'last_name',
                   'email', 'phone_number', 'role', 'is_verified', 'created_at',
                   'provider_profile']
+
+    def _viewer(self):
+        request = self.context.get('request')
+        return getattr(request, 'user', None) if request else None
+
+    def get_display_name(self, obj):
+        viewer = self._viewer()
+        if viewer and getattr(viewer, 'role', None) == 'client' and obj.id != viewer.id:
+            return obj.client_facing_name
+        return obj.display_name
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        viewer = self._viewer()
+        if viewer and getattr(viewer, 'role', None) == 'client' and instance.id != viewer.id:
+            # A client should never see another person's real identity —
+            # not just the display name, but the underlying identifying
+            # fields too (a client peer's own name is already just their
+            # client_id, so masking these doesn't affect them either way).
+            data['first_name']   = ''
+            data['last_name']    = ''
+            data['email']        = ''
+            data['phone_number'] = ''
+        return data
 
 
 class ClientRegisterSerializer(serializers.ModelSerializer):
